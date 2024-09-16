@@ -48,29 +48,38 @@ int main(int argc, char **argv) {
   wbLog(TRACE, "The dimensions of B are ", numBRows, " x ", numBColumns);
 
   //@@ Set numCRows and numCColumns
-
+  numCRows = numARows;
+  numCColumns = numBColumns;
 
   //@@ Allocate the hostC matrix
-
+  hostC = (float *)malloc(numCRows * numCColumns * sizeof(float));
 
   //@@ Allocate GPU memory here
-
+  float *deviceA, *deviceB, *deviceC;
+  cudaMalloc(&deviceA, numARows * numAColumns * sizeof(float));
+  cudaMalloc(&deviceB, numBRows * numBColumns * sizeof(float));
+  cudaMalloc(&deviceC, numCRows * numCColumns * sizeof(float));
 
   //@@ Copy memory to the GPU here
-
+  cudaMemcpy(deviceA, hostA, numARows * numAColumns * sizeof(float), cudaMemcpyHostToDevice);
+  cudaMemcpy(deviceB, hostB, numBRows * numBColumns * sizeof(float), cudaMemcpyHostToDevice);
 
   //@@ Initialize the grid and block dimensions here
-
+  dim3 blockDim(16, 16);
+  dim3 gridDim((numCColumns + blockDim.x - 1) / blockDim.x, 
+               (numCRows + blockDim.y - 1) / blockDim.y);
 
   //@@ Launch the GPU Kernel here
-
+  matrixMultiply<<<gridDim, blockDim>>>(deviceA, deviceB, deviceC, numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns);
   cudaDeviceSynchronize();
   
   //@@ Copy the GPU memory back to the CPU here
-
+  cudaMemcpy(hostC, deviceC, numCRows * numCColumns * sizeof(float), cudaMemcpyDeviceToHost);
 
   //@@ Free the GPU memory here
-
+  cudaFree(deviceA);
+  cudaFree(deviceB);
+  cudaFree(deviceC);
 
   wbSolution(args, hostC, numCRows, numCColumns);
 
