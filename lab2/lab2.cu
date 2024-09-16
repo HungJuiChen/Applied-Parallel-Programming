@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
 
   //@@ Launch the GPU Kernel here
   matrixMultiply<<<gridDim, blockDim>>>(deviceA, deviceB, deviceC, numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns);
-  cudaDeviceSynchronize();
+  //cudaDeviceSynchronize();
   
   //@@ Copy the GPU memory back to the CPU here
   cudaMemcpy(hostC, deviceC, numCRows * numCColumns * sizeof(float), cudaMemcpyDeviceToHost);
