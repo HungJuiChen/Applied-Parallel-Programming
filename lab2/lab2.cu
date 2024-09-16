@@ -86,6 +86,7 @@ int main(int argc, char **argv) {
   free(hostA);
   free(hostB);
   //@@Free the hostC matrix
+  free(hostC);
 
   return 0;
 }
