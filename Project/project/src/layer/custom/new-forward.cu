@@ -123,12 +123,9 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
 
-    // dim3 blockDim(Width_out, 16, 1);
-    // dim3 gridDim((Height_out + blockDim.y - 1) / blockDim.y, Map_out, Batch);
-    dim3 blockDim(16, 16, 1);
-    dim3 gridDim((Width_out + blockDim.x - 1) / blockDim.x,
-                (Height_out + blockDim.y - 1) / blockDim.y,
-                Batch);
+    dim3 blockDim(Width_out, 16, 1);
+    dim3 gridDim((Height_out + blockDim.y - 1) / blockDim.y, Map_out, Batch);
+
 
     conv_forward_kernel<<<gridDim, blockDim>>>(device_output, device_input, device_mask, Batch, Map_out, Channel, Height, Width, K);
 
