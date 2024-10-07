@@ -36,7 +36,23 @@ __global__ void conv_forward_kernel(float *output, const float *input, const flo
     #define mask_4d(i3, i2, i1, i0) mask[(i3) * (Channel * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
     // Insert your GPU convolution kernel code here
-    
+    int b = blockIdx.z;
+    int m = blockIdx.y;
+    int h = blockIdx.x * blockDim.y + threadIdx.y;
+    int w = threadIdx.x;
+
+    if (h < Height_out && w < Width_out) {
+        float acc = 0.0f;
+        for (int c = 0; c < Channel; ++c) {          // sum over all input feature maps
+            for (int p = 0; p < K; ++p) {              // for each element in the KxK filter height
+                for (int q = 0; q < K; ++q) {            // for each element in the KxK filter width
+                    acc += in_4d(b, c, h + p, w + q) * mask_4d(m, c, p, q);
+                }
+            }
+        }
+        out_4d(b, m, h, w) = acc;
+    }
+
 
     #undef out_4d
     #undef in_4d
@@ -58,6 +74,45 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
     //     std::cout<<"CUDA error: "<<cudaGetErrorString(error)<<std::endl;
     //     exit(-1);
     // }
+    const int Height_out = Height - K + 1;
+    const int Width_out = Width - K + 1;
+
+    cudaError_t error;
+
+    error = cudaMalloc((void **)device_output_ptr, Batch * Map_out * Height_out * Width_out * sizeof(float));
+    if(error != cudaSuccess)
+    {
+        std::cout << "CUDA error (malloc device_output_ptr): " << cudaGetErrorString(error) << std::endl;
+        exit(-1);
+    }
+
+    error = cudaMalloc((void **)device_input_ptr, Batch * Channel * Height * Width * sizeof(float));
+    if(error != cudaSuccess)
+    {
+        std::cout << "CUDA error (malloc device_input_ptr): " << cudaGetErrorString(error) << std::endl;
+        exit(-1);
+    }
+
+    error = cudaMalloc((void **)device_mask_ptr, Map_out * Channel * K * K * sizeof(float));
+    if(error != cudaSuccess)
+    {
+        std::cout << "CUDA error (malloc device_mask_ptr): " << cudaGetErrorString(error) << std::endl;
+        exit(-1);
+    }
+
+    error = cudaMemcpy(*device_input_ptr, host_input, Batch * Channel * Height * Width * sizeof(float), cudaMemcpyHostToDevice);
+    if(error != cudaSuccess)
+    {
+        std::cout << "CUDA error (memcpy host_input to device_input_ptr): " << cudaGetErrorString(error) << std::endl;
+        exit(-1);
+    }
+
+    error = cudaMemcpy(*device_mask_ptr, host_mask, Map_out * Channel * K * K * sizeof(float), cudaMemcpyHostToDevice);
+    if(error != cudaSuccess)
+    {
+        std::cout << "CUDA error (memcpy host_mask to device_mask_ptr): " << cudaGetErrorString(error) << std::endl;
+        exit(-1);
+    }
 
 }
 
@@ -65,6 +120,21 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *device_input, const float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
     // Set the kernel dimensions and call the kernel
+    const int Height_out = Height - K + 1;
+    const int Width_out = Width - K + 1;
+
+    dim3 blockDim(Width_out, 16, 1);
+    dim3 gridDim((Height_out + blockDim.y - 1) / blockDim.y, Map_out, Batch);
+
+    conv_forward_kernel<<<gridDim, blockDim>>>(device_output, device_input, device_mask, Batch, Map_out, Channel, Height, Width, K);
+
+    // Useful snippet for error checking
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess)
+    {
+        std::cout << "CUDA kernel launch error: " << cudaGetErrorString(error) << std::endl;
+        exit(-1);
+    }
 
 }
 
@@ -72,8 +142,23 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
 __host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *device_output, float *device_input, float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
     // Copy the output back to host
+    const int Height_out = Height - K + 1;
+    const int Width_out = Width - K + 1;
 
+    cudaError_t error;
+
+    error = cudaMemcpy(host_output, device_output, Batch * Map_out * Height_out * Width_out * sizeof(float), cudaMemcpyDeviceToHost);
+    if(error != cudaSuccess)
+    {
+        std::cout << "CUDA error (memcpy device_output to host_output): " << cudaGetErrorString(error) << std::endl;
+        exit(-1);
+    }
+
+  
     // Free device memory
+    cudaFree(device_output);
+    cudaFree(device_input);
+    cudaFree(device_mask);
 
 }
 
