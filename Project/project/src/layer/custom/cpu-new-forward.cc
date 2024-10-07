@@ -33,17 +33,23 @@ void conv_forward_cpu(float *output, const float *input, const float *mask, cons
   #define mask_4d(i3, i2, i1, i0) mask[(i3) * (Channel * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
   // Insert your CPU convolution kernel code here
-  for b = 0 .. Batch                     // for each image in the batch
-    for m = 0 .. Map_out               // for each output feature maps
-        for h = 0 .. Height_out        // for each output element
-            for w = 0 .. Width_out
-            {
-                output[b][m][h][w] = 0;
-                for c = 0 .. Channel   // sum over all input feature maps
-                    for p = 0 .. K // KxK filter
-                        for q = 0 .. K
-                            output[b][m][h][w] += input[b][c][h + p][w + q] * k[m][c][p][q]
+  // Implement the forward pass convolution
+  for (int b = 0; b < Batch; ++b) {                   // for each image in the batch
+    for (int m = 0; m < Map_out; ++m) {                // for each output feature map
+      for (int h = 0; h < Height_out; ++h) {           // for each output element height
+        for (int w = 0; w < Width_out; ++w) {          // for each output element width
+          out_4d(b, m, h, w) = 0;                      // initialize output to zero
+          for (int c = 0; c < Channel; ++c) {          // sum over all input feature maps
+            for (int p = 0; p < K; ++p) {              // for each element in the KxK filter height
+              for (int q = 0; q < K; ++q) {            // for each element in the KxK filter width
+                out_4d(b, m, h, w) += in_4d(b, c, h + p, w + q) * mask_4d(m, c, p, q);
+              }
             }
+          }
+        }
+      }
+    }
+  }
 
   #undef out_4d
   #undef in_4d
