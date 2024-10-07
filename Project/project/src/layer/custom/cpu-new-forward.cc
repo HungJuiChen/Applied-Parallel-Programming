@@ -33,6 +33,17 @@ void conv_forward_cpu(float *output, const float *input, const float *mask, cons
   #define mask_4d(i3, i2, i1, i0) mask[(i3) * (Channel * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
   // Insert your CPU convolution kernel code here
+  for b = 0 .. Batch                     // for each image in the batch
+    for m = 0 .. Map_out               // for each output feature maps
+        for h = 0 .. Height_out        // for each output element
+            for w = 0 .. Width_out
+            {
+                output[b][m][h][w] = 0;
+                for c = 0 .. Channel   // sum over all input feature maps
+                    for p = 0 .. K // KxK filter
+                        for q = 0 .. K
+                            output[b][m][h][w] += input[b][c][h + p][w + q] * k[m][c][p][q]
+            }
 
   #undef out_4d
   #undef in_4d
