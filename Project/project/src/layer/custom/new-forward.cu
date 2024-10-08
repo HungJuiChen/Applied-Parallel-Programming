@@ -36,10 +36,10 @@ __global__ void conv_forward_kernel(float *output, const float *input, const flo
     #define mask_4d(i3, i2, i1, i0) mask[(i3) * (Channel * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
     // Insert your GPU convolution kernel code here
-    int b = blockIdx.x;
-    int m = blockIdx.y;
-    int h = threadIdx.y;
-    int w = threadIdx.x;
+    int w = blockIdx.x * blockDim.x + threadIdx.x;
+    int h = blockIdx.y * blockDim.y + threadIdx.y;
+    int m = blockIdx.z;
+    int b = blockIdx.w;
 
     if (h < Height_out && w < Width_out) {
         float acc = 0.0f;
@@ -122,8 +122,9 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
 
-    dim3 blockDim(Width_out, Height_out);
-    dim3 gridDim(Batch, Map_out);
+
+    dim3 blockDim(16, 16);
+    dim3 gridDim((Width_out + blockDim.x - 1) / blockDim.x, (Height_out + blockDim.y - 1) / blockDim.y, Map_out, Batch);
 
     conv_forward_kernel<<<gridDim, blockDim>>>(device_output, device_input, device_mask, Batch, Map_out, Channel, Height, Width, K);
     
