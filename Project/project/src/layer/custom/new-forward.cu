@@ -36,28 +36,22 @@ __global__ void conv_forward_kernel(float *output, const float *input, const flo
     #define mask_4d(i3, i2, i1, i0) mask[(i3) * (Channel * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
     // Insert your GPU convolution kernel code here
-    int b = blockIdx.z;
+    int b = blockIdx.x;
     int m = blockIdx.y;
-    // Calculate combined index for batch and output map
-    ////int b = blockIdx.x; // Batch index
-    ////int m = blockIdx.y; // Output map index
-    int h = blockIdx.x * blockDim.y + threadIdx.y;
+    int h = threadIdx.y;
     int w = threadIdx.x;
-    //int h = threadIdx.y;
-    //int w = threadIdx.x;
 
     if (h < Height_out && w < Width_out) {
         float acc = 0.0f;
-        for (int c = 0; c < Channel; ++c) {          // sum over all input feature maps
-            for (int p = 0; p < K; ++p) {              // for each element in the KxK filter height
-                for (int q = 0; q < K; ++q) {            // for each element in the KxK filter width
+        for (int c = 0; c < Channel; ++c) {
+            for (int p = 0; p < K; ++p) {
+                for (int q = 0; q < K; ++q) {
                     acc += in_4d(b, c, h + p, w + q) * mask_4d(m, c, p, q);
                 }
             }
         }
         out_4d(b, m, h, w) = acc;
     }
-
 
     #undef out_4d
     #undef in_4d
@@ -128,18 +122,11 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
 
-    dim3 blockDim(Width_out, 16, 1);
-    dim3 gridDim((Height_out + blockDim.y - 1) / blockDim.y, Map_out, Batch);
-    // Define block dimensions (e.g., 16x16 threads)
-    //dim3 blockDim(16, 16, 1);
-    //dim3 gridDim(Batch, Map_out, 1);
-    // Calculate grid dimensions to cover Height_out and Width_out
-    //dim3 gridDim((Height_out + blockDim.y - 1) / blockDim.y,
-                //(Width_out + blockDim.x - 1) / blockDim.x,
-                //Batch * Map_out); // Combine Batch and Map_out into the z-dimension
+    dim3 blockDim(Width_out, Height_out);
+    dim3 gridDim(Batch, Map_out);
 
     conv_forward_kernel<<<gridDim, blockDim>>>(device_output, device_input, device_mask, Batch, Map_out, Channel, Height, Width, K);
-
+    
     // Useful snippet for error checking
     cudaError_t error = cudaGetLastError();
     if (error != cudaSuccess)
