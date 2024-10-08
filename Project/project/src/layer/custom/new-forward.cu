@@ -119,12 +119,18 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *device_input, const float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
     // Set the kernel dimensions and call the kernel
+    #define TILE_WIDTH 16
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
 
+    int W_grid = Width_out/TILE_WIDTH; // number of horizontal tiles per output map
+    int H_grid = Height_out/TILE_WIDTH; // number of vertical tiles per output map
+    int Y = H_grid * W_grid;
 
-    dim3 blockDim(16, 16);
-    dim3 gridDim((Width_out + blockDim.x - 1) / blockDim.x, (Height_out + blockDim.y - 1) / blockDim.y, Map_out, Batch);
+
+    dim3 blockDim(16, 16, 1);
+    //dim3 gridDim((Width_out + blockDim.x - 1) / blockDim.x, (Height_out + blockDim.y - 1) / blockDim.y, Map_out, Batch);
+    dim3 gridDim(Map_out,Y,1);
 
     conv_forward_kernel<<<gridDim, blockDim>>>(device_output, device_input, device_mask, Batch, Map_out, Channel, Height, Width, K);
     
