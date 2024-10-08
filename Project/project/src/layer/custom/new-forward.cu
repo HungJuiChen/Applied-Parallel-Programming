@@ -23,8 +23,8 @@ __global__ void conv_forward_kernel(float *output, const float *input, const flo
 
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-    (void)Height_out; // silence declared but never referenced warning. remove this line when you start working
-    (void)Width_out; // silence declared but never referenced warning. remove this line when you start working
+    //(void)Height_out; // silence declared but never referenced warning. remove this line when you start working
+    //(void)Width_out; // silence declared but never referenced warning. remove this line when you start working
 
     // We have some nice #defs for you below to simplify indexing. Feel free to use them, or create your own.
     // An example use of these macros:
@@ -36,9 +36,14 @@ __global__ void conv_forward_kernel(float *output, const float *input, const flo
     #define mask_4d(i3, i2, i1, i0) mask[(i3) * (Channel * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
     // Insert your GPU convolution kernel code here
-    int b = blockIdx.z;
-    int m = blockIdx.y;
-    int h = blockIdx.x * blockDim.y + threadIdx.y;
+    //int b = blockIdx.z;
+    //int m = blockIdx.y;
+    // Calculate combined index for batch and output map
+    int b = blockIdx.x; // Batch index
+    int m = blockIdx.y; // Output map index
+    //int h = blockIdx.x * blockDim.y + threadIdx.y;
+    //int w = threadIdx.x;
+    int h = threadIdx.y;
     int w = threadIdx.x;
 
     if (h < Height_out && w < Width_out) {
@@ -123,9 +128,15 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
 
-    dim3 blockDim(Width_out, 16, 1);
-    dim3 gridDim((Height_out + blockDim.y - 1) / blockDim.y, Map_out, Batch);
-
+    //dim3 blockDim(Width_out, 16, 1);
+    //dim3 gridDim((Height_out + blockDim.y - 1) / blockDim.y, Map_out, Batch);
+    // Define block dimensions (e.g., 16x16 threads)
+    dim3 blockDim(16, 16, 1);
+    dim3 gridDim(Batch, Map_out, 1);
+    // Calculate grid dimensions to cover Height_out and Width_out
+    //dim3 gridDim((Height_out + blockDim.y - 1) / blockDim.y,
+                //(Width_out + blockDim.x - 1) / blockDim.x,
+                //Batch * Map_out); // Combine Batch and Map_out into the z-dimension
 
     conv_forward_kernel<<<gridDim, blockDim>>>(device_output, device_input, device_mask, Batch, Map_out, Channel, Height, Width, K);
 
