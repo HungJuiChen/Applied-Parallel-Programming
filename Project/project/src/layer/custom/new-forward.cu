@@ -47,7 +47,7 @@ __global__ void conv_forward_kernel(float *output, const float *input, const flo
 
     if (h < Height_out && w < Width_out) {
         float acc = 0.0f;
-        for (int c = 0; c < C; ++c) {
+        for (int c = 0; c < Channel; ++c) {
             for (int p = 0; p < K; ++p) {
                 for (int q = 0; q < K; ++q) {
                     acc += in_4d(b, c, h + p, w + q) * mask_4d(m, c, p, q);
