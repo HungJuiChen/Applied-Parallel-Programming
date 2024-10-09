@@ -32,7 +32,8 @@ __global__ void conv_forward_kernel(float *output, const float *input, const flo
     // float a = in_4d(0,0,0,0)
     // out_4d(0,0,0,0) = a
 
-    W_grid = (Width_out + TILE_WIDTH - 1) / TILE_WIDTH;
+    #define TILE_WIDTH 16
+    int W_grid = (Width_out + TILE_WIDTH - 1) / TILE_WIDTH;
 
     #define out_4d(i3, i2, i1, i0) output[(i3) * (Map_out * Height_out * Width_out) + (i2) * (Height_out * Width_out) + (i1) * (Width_out) + i0]
     #define in_4d(i3, i2, i1, i0) input[(i3) * (Channel * Height * Width) + (i2) * (Height * Width) + (i1) * (Width) + i0]
@@ -125,11 +126,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     #define TILE_WIDTH 16
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-
-    int W_grid = Width_out/TILE_WIDTH; // number of horizontal tiles per output map
-    int H_grid = Height_out/TILE_WIDTH; // number of vertical tiles per output map
-    int Y = H_grid * W_grid;
-
 
     // Set the kernel dimensions and launch the kernel
     dim3 blockDim(16, 16, 1);
