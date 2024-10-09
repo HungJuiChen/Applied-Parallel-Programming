@@ -23,6 +23,7 @@ __global__ void conv_forward_kernel(float *output, const float *input, const flo
 
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
+    
     //(void)Height_out; // silence declared but never referenced warning. remove this line when you start working
     //(void)Width_out; // silence declared but never referenced warning. remove this line when you start working
 
@@ -31,19 +32,21 @@ __global__ void conv_forward_kernel(float *output, const float *input, const flo
     // float a = in_4d(0,0,0,0)
     // out_4d(0,0,0,0) = a
 
+    W_grid = (Width_out + TILE_WIDTH - 1) / TILE_WIDTH;
+
     #define out_4d(i3, i2, i1, i0) output[(i3) * (Map_out * Height_out * Width_out) + (i2) * (Height_out * Width_out) + (i1) * (Width_out) + i0]
     #define in_4d(i3, i2, i1, i0) input[(i3) * (Channel * Height * Width) + (i2) * (Height * Width) + (i1) * (Width) + i0]
     #define mask_4d(i3, i2, i1, i0) mask[(i3) * (Channel * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
-    // Insert your GPU convolution kernel code here
-    int w = blockIdx.x * blockDim.x + threadIdx.x;
-    int h = blockIdx.y * blockDim.y + threadIdx.y;
-    int m = blockIdx.z;
-    int b = blockIdx.y / gridDim.y;
+       // Index calculations
+    int m = blockIdx.x;
+    int h = (blockIdx.y / W_grid) * blockDim.y + threadIdx.y;
+    int w = (blockIdx.y % W_grid) * blockDim.x + threadIdx.x;
+    int b = blockIdx.z;  // Batch dimension
 
     if (h < Height_out && w < Width_out) {
         float acc = 0.0f;
-        for (int c = 0; c < Channel; ++c) {
+        for (int c = 0; c < C; ++c) {
             for (int p = 0; p < K; ++p) {
                 for (int q = 0; q < K; ++q) {
                     acc += in_4d(b, c, h + p, w + q) * mask_4d(m, c, p, q);
@@ -128,9 +131,10 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     int Y = H_grid * W_grid;
 
 
+    // Set the kernel dimensions and launch the kernel
     dim3 blockDim(16, 16, 1);
-    //dim3 gridDim((Width_out + blockDim.x - 1) / blockDim.x, (Height_out + blockDim.y - 1) / blockDim.y, Map_out, Batch);
-    dim3 gridDim(Map_out,Y,1);
+    int W_grid = (Width_out + blockDim.x - 1) / blockDim.x;
+    dim3 gridDim(Map_out, W_grid * ((Height_out + blockDim.y - 1) / blockDim.y), Batch);
 
     conv_forward_kernel<<<gridDim, blockDim>>>(device_output, device_input, device_mask, Batch, Map_out, Channel, Height, Width, K);
     
