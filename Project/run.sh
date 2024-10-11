@@ -9,7 +9,7 @@ clean() {
 build() {
     echo "Building the project..."
     ./cleanfile.sh
-    cmake -DCMAKE_CXX_FLAGS=-pg ./project/ && make -j8
+    cmake ./project/ && make -j8
     ./cleanfile.sh
 }
 
