@@ -17,9 +17,32 @@
   } while (0)
   
 __global__ void total(float *input, float *output, int len) {
-  //@@ Load a segment of the input vector into shared memory
-  //@@ Traverse the reduction tree
-  //@@ Write the computed sum of the block to the output vector at the correct index
+  __shared__ float partialSum[BLOCK_SIZE];  // Allocate shared memory
+
+  int tid = threadIdx.x;
+  int globalIndex = blockIdx.x * (BLOCK_SIZE * 2) + threadIdx.x;
+
+  // Load elements from the input array into shared memory, considering boundary checks
+  if (globalIndex < len) {
+      partialSum[tid] = input[globalIndex] + ((globalIndex + BLOCK_SIZE) < len ? input[globalIndex + BLOCK_SIZE] : 0.0f);
+  } else {
+      partialSum[tid] = 0.0f;
+  }
+
+  __syncthreads();  // Synchronize to ensure all threads have written to shared memory
+
+  // Reduction in shared memory
+  for (int stride = BLOCK_SIZE / 2; stride > 0; stride >>= 1) {
+      if (tid < stride) {
+          partialSum[tid] += partialSum[tid + stride];
+      }
+      __syncthreads();  // Ensure all threads have completed this step before moving on
+  }
+
+  // Write the result of this block's reduction to the output array
+  if (tid == 0) {
+      output[blockIdx.x] = partialSum[0];
+  }
 }
 
 int main(int argc, char **argv) {
@@ -28,6 +51,8 @@ int main(int argc, char **argv) {
   float *hostInput;  // The input 1D list
   float *hostOutput; // The output list
   //@@ Initialize device input and output pointers
+  float *deviceInput;
+  float *deviceOutput;
 
   int numInputElements;  // number of elements in the input list
   int numOutputElements; // number of elements in the output list
@@ -48,20 +73,25 @@ int main(int argc, char **argv) {
   // The number of output elements in the input is numOutputElements
 
   //@@ Allocate GPU memory
+  wbCheck(cudaMalloc((void **)&deviceInput, numInputElements * sizeof(float)));
+  wbCheck(cudaMalloc((void **)&deviceOutput, numOutputElements * sizeof(float)));
 
 
   //@@ Copy input memory to the GPU
+  wbCheck(cudaMemcpy(deviceInput, hostInput, numInputElements * sizeof(float), cudaMemcpyHostToDevice));
 
 
   //@@ Initialize the grid and block dimensions here
+  dim3 dimBlock(BLOCK_SIZE, 1, 1);
+  dim3 dimGrid((numInputElements + BLOCK_SIZE * 2 - 1) / (BLOCK_SIZE * 2), 1, 1);
 
 
   //@@ Launch the GPU Kernel and perform CUDA computation
-
+  total<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, numInputElements);
   
   cudaDeviceSynchronize();  
   //@@ Copy the GPU output memory back to the CPU
-
+  wbCheck(cudaMemcpy(hostOutput, deviceOutput, numOutputElements * sizeof(float), cudaMemcpyDeviceToHost));
   
   /********************************************************************
    * Reduce output vector on the host
@@ -74,7 +104,8 @@ int main(int argc, char **argv) {
   }
 
   //@@ Free the GPU memory
-
+  wbCheck(cudaFree(deviceInput));
+  wbCheck(cudaFree(deviceOutput));
 
 
   wbSolution(args, hostOutput, 1);
