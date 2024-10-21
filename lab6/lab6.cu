@@ -98,7 +98,7 @@ int main(int argc, char **argv) {
   float *deviceInput;
   float *deviceOutput;
   float *deviceBlockSums;
-  float *deviceAccumBlockSums;
+  float *deviceScannedBlockSums;
   int numElements; // number of elements in the list
 
   args = wbArg_read(argc, argv);
