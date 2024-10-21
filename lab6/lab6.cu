@@ -35,10 +35,16 @@ __global__ void scan_block_kernel(float *input, float *output, float *block_sums
 
   // Up-sweep (reduction) phase
   for (int stride = 1; stride <= tid; stride <<= 1) {
-    int idx = (tid - stride);
-    if (idx >= 0)
-      shared_data[tid] += shared_data[idx];
-    __syncthreads();
+    float temp = 0;
+    if (tid >= stride) {
+      temp = shared_data[tid - stride];
+    }
+    __syncthreads(); // Ensure all threads read the values before updating
+
+    if (tid >= stride) {
+      shared_data[tid] += temp;
+    }
+    __syncthreads(); // Ensure all threads finish the addition
   }
 
   // Store the last element of each block into block_sums
@@ -79,10 +85,16 @@ __global__ void scan(float *input, float *output, int len) {
 
   // Up-sweep (reduction) phase
   for (int stride = 1; stride <= tid; stride <<= 1) {
-    int idx = tid - stride;
-    if (idx >= 0)
-      shared_data[tid] += shared_data[idx];
-    __syncthreads();
+    float temp = 0;
+    if (tid >= stride) {
+      temp = shared_data[tid - stride];
+    }
+    __syncthreads(); // Synchronize before modifying shared memory
+
+    if (tid >= stride) {
+      shared_data[tid] += temp;
+    }
+    __syncthreads(); // Synchronize after updating shared memory
   }
 
   // Write the results to output
