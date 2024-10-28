@@ -55,7 +55,7 @@ __global__ void computeHistogram(const unsigned char *grayImage, int *histogram,
 }
 
 // Kernel to apply histogram equalization
-__global__ void applyEqualization(const unsigned char *grayImage, unsigned char *equalizedImage, unsigned char *equalizeMap, int size, int channels) {
+__global__ void applyEqualization(const unsigned char *inputImage, unsigned char *outputImage, const unsigned char *equalizeMap, int size, int channels) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size * channels) {
         unsigned char pixel = inputImage[idx];
@@ -159,7 +159,8 @@ int main(int argc, char **argv) {
     int blocksPerGridGray = (numPixels + threadsPerBlock - 1) / threadsPerBlock;
     int blocksPerGridHist = (numPixels + threadsPerBlock - 1) / threadsPerBlock;
     int blocksPerGridEqualize = (numPixels + threadsPerBlock - 1) / threadsPerBlock;
-
+    int blocksPerGridCast = (numPixels * imageChannels + threadsPerBlock - 1) / threadsPerBlock;
+    
     //@@ Insert code here: Launch CUDA kernels
 
     // Step 1: Cast float image to unsigned char
