@@ -1,10 +1,14 @@
+// lab7.cu
 // Histogram Equalization
 
 #include <wb.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define HISTOGRAM_LENGTH 256
-
-//@@ insert code here
 
 // Define the wbCheck macro for CUDA error checking
 #define wbCheck(stmt)                                                     \
@@ -34,7 +38,8 @@ __global__ void rgbToGrayscale(const unsigned char *rgbImage, unsigned char *gra
         unsigned char r = rgbImage[rgbIdx];
         unsigned char g = rgbImage[rgbIdx + 1];
         unsigned char b = rgbImage[rgbIdx + 2];
-        grayImage[idx] = (unsigned char)(0.299f * r + 0.587f * g + 0.114f * b);
+        // Using the luminosity method coefficients
+        grayImage[idx] = (unsigned char)(0.21f * r + 0.71f * g + 0.07f * b);
     }
 }
 
@@ -60,171 +65,183 @@ __global__ void applyEqualization(const unsigned char *grayImage, unsigned char 
 }
 
 int main(int argc, char **argv) {
-  wbArg_t args;
-  int imageWidth;
-  int imageHeight;
-  int imageChannels;
-  wbImage_t inputImage;
-  wbImage_t outputImage;
-  float *hostInputImageData;
-  float *hostOutputImageData;
-  const char *inputImageFile;
+    wbArg_t args;
+    int imageWidth;
+    int imageHeight;
+    int imageChannels;
+    wbImage_t inputImage;
+    wbImage_t outputImage;
+    float *hostInputImageData;
+    float *hostOutputImageData;
+    const char *inputImageFile;
 
-  //@@ Insert more code here
-  //Initialize CUDA device
-  int deviceCount;
-  wbCheck(cudaGetDeviceCount(&deviceCount));
-  if (deviceCount == 0) {
-      wbLog(ERROR, "No CUDA devices found.");
-      return -1;
-  }
-  wbCheck(cudaSetDevice(0));
+    //@@ Insert code here: Initialize CUDA device
+    // Initialize CUDA device and check for errors
+    int deviceCount;
+    wbCheck(cudaGetDeviceCount(&deviceCount));
+    if (deviceCount == 0) {
+        wbLog(ERROR, "No CUDA devices found.");
+        return -1;
+    }
+    wbCheck(cudaSetDevice(0)); // Select the first CUDA device
 
-  args = wbArg_read(argc, argv); /* parse the input arguments */
+    // Read input arguments
+    args = wbArg_read(argc, argv); /* parse the input arguments */
 
-  inputImageFile = wbArg_getInputFile(args, 0);
+    // Get the input image file path
+    inputImageFile = wbArg_getInputFile(args, 0);
 
-  //Import data and create memory on host
-  inputImage = wbImport(inputImageFile);
-  imageWidth = wbImage_getWidth(inputImage);
-  imageHeight = wbImage_getHeight(inputImage);
-  imageChannels = wbImage_getChannels(inputImage);
-  outputImage = wbImage_new(imageWidth, imageHeight, imageChannels);
+    // Import data and retrieve image dimensions and channels
+    inputImage = wbImport(inputImageFile);
+    imageWidth = wbImage_getWidth(inputImage);
+    imageHeight = wbImage_getHeight(inputImage);
+    imageChannels = wbImage_getChannels(inputImage);
 
+    // Create an output image with the same dimensions and channels
+    outputImage = wbImage_new(imageWidth, imageHeight, imageChannels);
 
-  //@@ insert code here
-  // Get pointers to the input and output image data
-  hostInputImageData = wbImage_getData(inputImage);
-  hostOutputImageData = wbImage_getData(outputImage);
+    // Get pointers to the input and output image data
+    hostInputImageData = wbImage_getData(inputImage);
+    hostOutputImageData = wbImage_getData(outputImage);
 
-  //Allocate device memory and copy input data
+    //@@ Insert code here: Allocate device memory and copy input data
 
-  int numPixels = imageWidth * imageHeight;
-  int inputSize = numPixels * imageChannels * sizeof(float);
-  float *deviceInput;
-  unsigned char *deviceUCharInput;
-  unsigned char *deviceGrayImage;
-  unsigned char *deviceEqualizedImage;
-  int *deviceHistogram;
-  unsigned char *deviceEqualizeMap;
+    // Calculate the number of pixels and sizes for memory allocations
+    int numPixels = imageWidth * imageHeight;
+    int inputSize = numPixels * imageChannels * sizeof(float);
+    float *deviceInput;
+    unsigned char *deviceUCharInput;
+    unsigned char *deviceGrayImage;
+    unsigned char *deviceEqualizedImage;
+    int *deviceHistogram;
+    unsigned char *deviceEqualizeMap;
 
-  // Allocate device memory for input image (float)
-  wbCheck(cudaMalloc((void **)&deviceInput, inputSize));
-  wbCheck(cudaMemcpy(deviceInput, hostInputImageData, inputSize, cudaMemcpyHostToDevice));
+    // Allocate device memory for input image (float)
+    wbCheck(cudaMalloc((void **)&deviceInput, inputSize));
+    // Copy input image data from host to device
+    wbCheck(cudaMemcpy(deviceInput, hostInputImageData, inputSize, cudaMemcpyHostToDevice));
 
-  // Allocate device memory for unsigned char input
-  wbCheck(cudaMalloc((void **)&deviceUCharInput, numPixels * imageChannels * sizeof(unsigned char)));
+    // Allocate device memory for unsigned char input
+    wbCheck(cudaMalloc((void **)&deviceUCharInput, numPixels * imageChannels * sizeof(unsigned char)));
 
-  // Allocate device memory for grayscale image
-  wbCheck(cudaMalloc((void **)&deviceGrayImage, numPixels * sizeof(unsigned char)));
+    // Allocate device memory for grayscale image
+    wbCheck(cudaMalloc((void **)&deviceGrayImage, numPixels * sizeof(unsigned char)));
 
-  // Allocate device memory for equalized image
-  wbCheck(cudaMalloc((void **)&deviceEqualizedImage, numPixels * imageChannels * sizeof(unsigned char)));
+    // Allocate device memory for equalized image
+    wbCheck(cudaMalloc((void **)&deviceEqualizedImage, numPixels * imageChannels * sizeof(unsigned char)));
 
-  // Allocate device memory for histogram
-  wbCheck(cudaMalloc((void **)&deviceHistogram, HISTOGRAM_LENGTH * sizeof(int)));
-  wbCheck(cudaMemset(deviceHistogram, 0, HISTOGRAM_LENGTH * sizeof(int)));
+    // Allocate device memory for histogram and initialize to zero
+    wbCheck(cudaMalloc((void **)&deviceHistogram, HISTOGRAM_LENGTH * sizeof(int)));
+    wbCheck(cudaMemset(deviceHistogram, 0, HISTOGRAM_LENGTH * sizeof(int)));
 
-  // Allocate device memory for equalize map
-  wbCheck(cudaMalloc((void **)&deviceEqualizeMap, HISTOGRAM_LENGTH * sizeof(unsigned char)));
+    // Allocate device memory for equalize map
+    wbCheck(cudaMalloc((void **)&deviceEqualizeMap, HISTOGRAM_LENGTH * sizeof(unsigned char)));
 
-  //@@ Insert code here: Define block and grid sizes
-  int threadsPerBlock = 256;
-  int blocksPerGridInput = (numPixels * imageChannels + threadsPerBlock - 1) / threadsPerBlock;
-  int blocksPerGridGray = (numPixels + threadsPerBlock - 1) / threadsPerBlock;
-  int blocksPerGridHist = (numPixels + threadsPerBlock - 1) / threadsPerBlock;
-  int blocksPerGridEqualize = (numPixels + threadsPerBlock - 1) / threadsPerBlock;
+    //@@ Insert code here: Define block and grid sizes
 
+    // Define the number of threads per block
+    int threadsPerBlock = 256;
 
-  //@@ Insert code here: Launch CUDA kernels
+    // Calculate the number of blocks per grid for each kernel
+    int blocksPerGridInput = (numPixels * imageChannels + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGridGray = (numPixels + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGridHist = (numPixels + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGridEqualize = (numPixels + threadsPerBlock - 1) / threadsPerBlock;
 
-  // Step 1: Cast to unsigned char
-  castToUChar<<<blocksPerGridInput, threadsPerBlock>>>(deviceInput, deviceUCharInput, numPixels * imageChannels);
-  wbCheck(cudaGetLastError());
+    //@@ Insert code here: Launch CUDA kernels
 
-  // Step 2: Convert RGB to Grayscale
-  rgbToGrayscale<<<blocksPerGridGray, threadsPerBlock>>>(deviceUCharInput, deviceGrayImage, imageWidth, imageHeight);
-  wbCheck(cudaGetLastError());
+    // Step 1: Cast float image to unsigned char
+    castToUChar<<<blocksPerGridInput, threadsPerBlock>>>(deviceInput, deviceUCharInput, numPixels * imageChannels);
+    wbCheck(cudaGetLastError());
 
-  // Step 3: Compute Histogram
-  computeHistogram<<<blocksPerGridHist, threadsPerBlock>>>(deviceGrayImage, deviceHistogram, numPixels);
-  wbCheck(cudaGetLastError());
+    // Step 2: Convert RGB image to Grayscale
+    rgbToGrayscale<<<blocksPerGridGray, threadsPerBlock>>>(deviceUCharInput, deviceGrayImage, imageWidth, imageHeight);
+    wbCheck(cudaGetLastError());
 
-  // Step 4: Copy histogram back to host for scan
-  int hostHistogram[HISTOGRAM_LENGTH];
-  wbCheck(cudaMemcpy(hostHistogram, deviceHistogram, HISTOGRAM_LENGTH * sizeof(int), cudaMemcpyDeviceToHost));
+    // Step 3: Compute Histogram of the Grayscale image
+    computeHistogram<<<blocksPerGridHist, threadsPerBlock>>>(deviceGrayImage, deviceHistogram, numPixels);
+    wbCheck(cudaGetLastError());
 
-  // Compute the prefix sum (scan) on host
-  int scan[HISTOGRAM_LENGTH];
-  scan[0] = hostHistogram[0];
-  for(int i = 1; i < HISTOGRAM_LENGTH; i++) {
-      scan[i] = scan[i - 1] + hostHistogram[i];
-  }
+    // Step 4: Copy histogram back to host for scan (CDF computation)
+    int hostHistogram[HISTOGRAM_LENGTH];
+    wbCheck(cudaMemcpy(hostHistogram, deviceHistogram, HISTOGRAM_LENGTH * sizeof(int), cudaMemcpyDeviceToHost));
 
-  // Find the minimum non-zero value in the scan for normalization
-  int scan_min = 0;
-  for(int i = 0; i < HISTOGRAM_LENGTH; i++) {
-      if(scan[i] != 0) {
-          scan_min = scan[i];
-          break;
-      }
-  }
+    // Compute the prefix sum (scan) on host to obtain CDF
+    int scan[HISTOGRAM_LENGTH];
+    scan[0] = hostHistogram[0];
+    for(int i = 1; i < HISTOGRAM_LENGTH; i++) {
+        scan[i] = scan[i - 1] + hostHistogram[i];
+    }
 
-  // Create the equalization mapping on host
-  unsigned char hostEqualizeMap[HISTOGRAM_LENGTH];
-  float scale = 255.0f / (float)(numPixels - scan_min);
-  for(int i = 0; i < HISTOGRAM_LENGTH; i++) {
-      hostEqualizeMap[i] = (unsigned char)((scan[i] - scan_min) * scale);
-  }
+    // Step 5: Find the minimum non-zero value in the CDF for normalization
+    int scan_min = 0;
+    for(int i = 0; i < HISTOGRAM_LENGTH; i++) {
+        if(scan[i] != 0) {
+            scan_min = scan[i];
+            break;
+        }
+    }
 
-  // Copy the equalize map to device
-  wbCheck(cudaMemcpy(deviceEqualizeMap, hostEqualizeMap, HISTOGRAM_LENGTH * sizeof(unsigned char), cudaMemcpyHostToDevice));
+    // Step 6: Create the histogram equalization mapping function
+    unsigned char hostEqualizeMap[HISTOGRAM_LENGTH];
+    float scale = 255.0f / (float)(numPixels - scan_min);
+    for(int i = 0; i < HISTOGRAM_LENGTH; i++) {
+        // Applying the histogram equalization formula
+        float cdf = (float)(scan[i] - scan_min) / (float)(numPixels - scan_min);
+        // Clamp the values to [0, 255]
+        if(cdf < 0.0f) cdf = 0.0f;
+        if(cdf > 1.0f) cdf = 1.0f;
+        hostEqualizeMap[i] = (unsigned char)(cdf * 255.0f);
+    }
 
-  // Step 5: Apply Histogram Equalization
-  applyEqualization<<<blocksPerGridEqualize, threadsPerBlock>>>(deviceGrayImage, deviceEqualizedImage, deviceEqualizeMap, numPixels, imageChannels);
-  wbCheck(cudaGetLastError());
+    // Copy the equalize map to device memory
+    wbCheck(cudaMemcpy(deviceEqualizeMap, hostEqualizeMap, HISTOGRAM_LENGTH * sizeof(unsigned char), cudaMemcpyHostToDevice));
 
-  //@@ Insert code here: Copy the equalized image back to host and convert to float
+    // Step 7: Apply Histogram Equalization to the image
+    applyEqualization<<<blocksPerGridEqualize, threadsPerBlock>>>(deviceGrayImage, deviceEqualizedImage, deviceEqualizeMap, numPixels, imageChannels);
+    wbCheck(cudaGetLastError());
 
-  // Allocate temporary host memory for equalized image
-  unsigned char *hostEqualizedImage = (unsigned char *)malloc(numPixels * imageChannels * sizeof(unsigned char));
-  if (hostEqualizedImage == NULL) {
-      wbLog(ERROR, "Failed to allocate memory for hostEqualizedImage.");
-      // Free device memory before exiting
-      wbCheck(cudaFree(deviceInput));
-      wbCheck(cudaFree(deviceUCharInput));
-      wbCheck(cudaFree(deviceGrayImage));
-      wbCheck(cudaFree(deviceEqualizedImage));
-      wbCheck(cudaFree(deviceHistogram));
-      wbCheck(cudaFree(deviceEqualizeMap));
-      return -1;
-  }
+    //@@ Insert code here: Copy the equalized image back to host and convert to float
 
-  // Copy equalized image back to host
-  wbCheck(cudaMemcpy(hostEqualizedImage, deviceEqualizedImage, numPixels * imageChannels * sizeof(unsigned char), cudaMemcpyDeviceToHost));
+    // Allocate temporary host memory for the equalized image
+    unsigned char *hostEqualizedImage = (unsigned char *)malloc(numPixels * imageChannels * sizeof(unsigned char));
+    if (hostEqualizedImage == NULL) {
+        wbLog(ERROR, "Failed to allocate memory for hostEqualizedImage.");
+        // Free device memory before exiting
+        wbCheck(cudaFree(deviceInput));
+        wbCheck(cudaFree(deviceUCharInput));
+        wbCheck(cudaFree(deviceGrayImage));
+        wbCheck(cudaFree(deviceEqualizedImage));
+        wbCheck(cudaFree(deviceHistogram));
+        wbCheck(cudaFree(deviceEqualizeMap));
+        return -1;
+    }
 
-  // Convert equalized image from unsigned char [0,255] to float [0,1]
-  for(int i = 0; i < numPixels * imageChannels; i++) {
-      hostOutputImageData[i] = (float)hostEqualizedImage[i] / 255.0f;
-  }
+    // Copy the equalized image back to host memory
+    wbCheck(cudaMemcpy(hostEqualizedImage, deviceEqualizedImage, numPixels * imageChannels * sizeof(unsigned char), cudaMemcpyDeviceToHost));
 
-  //@@ Insert code here: Free device and host memory
+    // Step 8: Cast the equalized image back to float [0,1] and store in outputImage
+    for(int i = 0; i < numPixels * imageChannels; i++) {
+        hostOutputImageData[i] = (float)hostEqualizedImage[i] / 255.0f;
+    }
 
-  // Free device memory
-  wbCheck(cudaFree(deviceInput));
-  wbCheck(cudaFree(deviceUCharInput));
-  wbCheck(cudaFree(deviceGrayImage));
-  wbCheck(cudaFree(deviceEqualizedImage));
-  wbCheck(cudaFree(deviceHistogram));
-  wbCheck(cudaFree(deviceEqualizeMap));
+    //@@ Insert code here: Free device and host memory
 
-  // Free host temporary memory
-  free(hostEqualizedImage);
+    // Free device memory
+    wbCheck(cudaFree(deviceInput));
+    wbCheck(cudaFree(deviceUCharInput));
+    wbCheck(cudaFree(deviceGrayImage));
+    wbCheck(cudaFree(deviceEqualizedImage));
+    wbCheck(cudaFree(deviceHistogram));
+    wbCheck(cudaFree(deviceEqualizeMap));
 
-  wbSolution(args, outputImage);
+    // Free host temporary memory
+    free(hostEqualizedImage);
 
-  //@@ insert code here
+    // Write the solution to the output
+    wbSolution(args, outputImage);
 
-  return 0;
+    //@@ Insert code here
+
+    return 0;
 }
-
