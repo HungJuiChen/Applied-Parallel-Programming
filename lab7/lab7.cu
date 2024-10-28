@@ -158,7 +158,7 @@ int main(int argc, char **argv) {
     int blocksPerGridInput = (numPixels * imageChannels + threadsPerBlock - 1) / threadsPerBlock;
     int blocksPerGridGray = (numPixels + threadsPerBlock - 1) / threadsPerBlock;
     int blocksPerGridHist = (numPixels + threadsPerBlock - 1) / threadsPerBlock;
-    int blocksPerGridEqualize = (numPixels + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGridEqualize = (numPixels * imageChannels + threadsPerBlock - 1) / threadsPerBlock;
     int blocksPerGridCast = (numPixels * imageChannels + threadsPerBlock - 1) / threadsPerBlock;
     
     //@@ Insert code here: Launch CUDA kernels
@@ -201,7 +201,7 @@ int main(int argc, char **argv) {
     for(int i = 0; i < HISTOGRAM_LENGTH; i++) {
         // Applying the histogram equalization formula
         float cdf = (float)(scan[i] - scan_min) / (float)(numPixels - scan_min);
-        // Clamp the values to [0, 255]
+        // Clamp the values to [0, 1]
         if(cdf < 0.0f) cdf = 0.0f;
         if(cdf > 1.0f) cdf = 1.0f;
         hostEqualizeMap[i] = (unsigned char)(cdf * 255.0f);
@@ -211,7 +211,7 @@ int main(int argc, char **argv) {
     wbCheck(cudaMemcpy(deviceEqualizeMap, hostEqualizeMap, HISTOGRAM_LENGTH * sizeof(unsigned char), cudaMemcpyHostToDevice));
 
     // Step 7: Apply Histogram Equalization to the image
-    applyEqualization<<<blocksPerGridEqualize, threadsPerBlock>>>(deviceGrayImage, deviceEqualizedImage, deviceEqualizeMap, numPixels, imageChannels);
+    applyEqualization<<<blocksPerGridEqualize, threadsPerBlock>>>(deviceUCharInput, deviceEqualizedImage, deviceEqualizeMap, numPixels, imageChannels);
     wbCheck(cudaGetLastError());
 
     // Step 8: Cast the equalized image back to float [0,1]
