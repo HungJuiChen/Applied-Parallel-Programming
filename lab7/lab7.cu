@@ -1,4 +1,3 @@
-// lab7.cu
 // Histogram Equalization
 
 #include <wb.h>
@@ -25,7 +24,10 @@
 __global__ void castToUChar(const float *input, unsigned char *output, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
-        output[idx] = (unsigned char)(input[idx] * 255.0f);
+        // Clamp the values to [0,1] before scaling
+        float val = input[idx];
+        val = val < 0.0f ? 0.0f : (val > 1.0f ? 1.0f : val);
+        output[idx] = (unsigned char)(val * 255.0f);
     }
 }
 
@@ -55,14 +57,21 @@ __global__ void computeHistogram(const unsigned char *grayImage, int *histogram,
 // Kernel to apply histogram equalization
 __global__ void applyEqualization(const unsigned char *grayImage, unsigned char *equalizedImage, unsigned char *equalizeMap, int size, int channels) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < size) {
-        unsigned char eqValue = equalizeMap[grayImage[idx]];
-        for(int c = 0; c < channels; c++) {
-            int outIdx = idx * channels + c;
-            equalizedImage[outIdx] = eqValue;
-        }
+    if (idx < size * channels) {
+        unsigned char pixel = inputImage[idx];
+        unsigned char eqPixel = equalizeMap[pixel];
+        outputImage[idx] = eqPixel;
     }
 }
+
+// Kernel to cast unsigned char image data [0,255] to float [0,1]
+__global__ void castToFloat(const unsigned char *input, float *output, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        output[idx] = ((float)input[idx]) / 255.0f;
+    }
+}
+
 
 int main(int argc, char **argv) {
     wbArg_t args;
@@ -115,6 +124,7 @@ int main(int argc, char **argv) {
     unsigned char *deviceEqualizedImage;
     int *deviceHistogram;
     unsigned char *deviceEqualizeMap;
+    float *deviceOutputFloat;
 
     // Allocate device memory for input image (float)
     wbCheck(cudaMalloc((void **)&deviceInput, inputSize));
@@ -137,6 +147,8 @@ int main(int argc, char **argv) {
     // Allocate device memory for equalize map
     wbCheck(cudaMalloc((void **)&deviceEqualizeMap, HISTOGRAM_LENGTH * sizeof(unsigned char)));
 
+    // Allocate device memory for output float image
+    wbCheck(cudaMalloc((void **)&deviceOutputFloat, inputSize));
     //@@ Insert code here: Define block and grid sizes
 
     // Define the number of threads per block
@@ -201,31 +213,15 @@ int main(int argc, char **argv) {
     applyEqualization<<<blocksPerGridEqualize, threadsPerBlock>>>(deviceGrayImage, deviceEqualizedImage, deviceEqualizeMap, numPixels, imageChannels);
     wbCheck(cudaGetLastError());
 
+    // Step 8: Cast the equalized image back to float [0,1]
+    castToFloat<<<blocksPerGridCast, threadsPerBlock>>>(deviceEqualizedImage, deviceOutputFloat, numPixels * imageChannels);
+    wbCheck(cudaGetLastError());
+
     //@@ Insert code here: Copy the equalized image back to host and convert to float
 
-    // Allocate temporary host memory for the equalized image
-    unsigned char *hostEqualizedImage = (unsigned char *)malloc(numPixels * imageChannels * sizeof(unsigned char));
-    if (hostEqualizedImage == NULL) {
-        wbLog(ERROR, "Failed to allocate memory for hostEqualizedImage.");
-        // Free device memory before exiting
-        wbCheck(cudaFree(deviceInput));
-        wbCheck(cudaFree(deviceUCharInput));
-        wbCheck(cudaFree(deviceGrayImage));
-        wbCheck(cudaFree(deviceEqualizedImage));
-        wbCheck(cudaFree(deviceHistogram));
-        wbCheck(cudaFree(deviceEqualizeMap));
-        return -1;
-    }
 
-    // Copy the equalized image back to host memory
-    wbCheck(cudaMemcpy(hostEqualizedImage, deviceEqualizedImage, numPixels * imageChannels * sizeof(unsigned char), cudaMemcpyDeviceToHost));
-
-    // Step 8: Cast the equalized image back to float [0,1] and store in outputImage
-    for(int i = 0; i < numPixels * imageChannels; i++) {
-        hostOutputImageData[i] = (float)hostEqualizedImage[i] / 255.0f;
-    }
-
-    //@@ Insert code here: Free device and host memory
+    // Copy the final float image back to host memory
+    wbCheck(cudaMemcpy(hostOutputImageData, deviceOutputFloat, numPixels * imageChannels * sizeof(float), cudaMemcpyDeviceToHost));
 
     // Free device memory
     wbCheck(cudaFree(deviceInput));
@@ -234,9 +230,7 @@ int main(int argc, char **argv) {
     wbCheck(cudaFree(deviceEqualizedImage));
     wbCheck(cudaFree(deviceHistogram));
     wbCheck(cudaFree(deviceEqualizeMap));
-
-    // Free host temporary memory
-    free(hostEqualizedImage);
+    wbCheck(cudaFree(deviceOutputFloat));
 
     // Write the solution to the output
     wbSolution(args, outputImage);
