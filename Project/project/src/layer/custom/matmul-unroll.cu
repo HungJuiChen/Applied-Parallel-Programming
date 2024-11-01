@@ -34,12 +34,15 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
 
     // TODO: Insert your input matrix unrolling kernel code here
     // Implementing the input matrix unrolling as per instructions
-    int Height_out_unroll = Height_out;
-    int Width_out_unroll = Width_out;
+    // Each thread handles one element in the unrolled output matrix
+
+    // Calculate the output matrix dimensions
+    const int Height_out_unroll = Height_out;
+    const int Width_out_unroll = Width_out;
 
     // Calculate total rows and columns for the unrolled matrix
-    int total_rows = Batch * Channel * K * K;
-    int total_cols = Height_out * Width_out;
+    const int total_rows = Batch * Channel * K * K;
+    const int total_cols = Height_out_unroll * Width_out_unroll;
 
     // Calculate the row and column index for the output matrix
     int row = blockIdx.y * blockDim.y + threadIdx.y; // Row index in unrolled matrix
@@ -55,8 +58,8 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
         int k_col = k % K;
 
         // Determine the spatial location in the output
-        int h_out = col / Width_out;
-        int w_out = col % Width_out;
+        int h_out = col / Width_out_unroll;
+        int w_out = col % Width_out_unroll;
 
         // Fetch the corresponding input value
         float val = in_4d(batch, channel, h_out + k_row, w_out + k_col);
@@ -64,7 +67,7 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
         // Write the value to the output matrix
         output[row * total_cols + col] = val;
     }
-    
+
 
     #undef in_4d
 }
