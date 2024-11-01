@@ -184,8 +184,8 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     
     // Define block and grid dimensions for the unrolling kernel
     dim3 blockDim_unroll(16, 16, 1); // 16x16 threads per block
-    dim3 gridDim_unroll( (Width_out + blockDim_unroll.x - 1) / blockDim_unroll.x,
-                         (Batch * Channel * K * K + blockDim_unroll.y - 1) / blockDim_unroll.y,
+    dim3 gridDim_unroll( (Width_unrolled + blockDim_unroll.x - 1) / blockDim_unroll.x,
+                         (Batch * Height_unrolled + blockDim_unroll.y - 1) / blockDim_unroll.y,
                          1 );
 
     // Launch the matrix unrolling kernel
@@ -253,7 +253,7 @@ __host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *d
     cudaFree(device_input);
     cudaFree(device_mask);
     // Error checking
-    error = cudaGetLastError();
+    cudaError_t error = cudaGetLastError();
     if(error != cudaSuccess)
     {
         std::cout << "CUDA error (freeing device memory in epilog): " << cudaGetErrorString(error) << std::endl;
