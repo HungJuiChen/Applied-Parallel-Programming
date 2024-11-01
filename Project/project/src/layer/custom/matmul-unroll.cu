@@ -36,13 +36,9 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     // Implementing the input matrix unrolling as per instructions
     // Each thread handles one element in the unrolled output matrix
 
-    // Calculate the output matrix dimensions
-    const int Height_out_unroll = Height_out;
-    const int Width_out_unroll = Width_out;
-
     // Calculate total rows and columns for the unrolled matrix
     const int total_rows = Batch * Channel * K * K;
-    const int total_cols = Height_out_unroll * Width_out_unroll;
+    const int total_cols = Height_out * Width_out;
 
     // Calculate the row and column index for the output matrix
     int row = blockIdx.y * blockDim.y + threadIdx.y; // Row index in unrolled matrix
@@ -58,8 +54,8 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
         int k_col = k % K;
 
         // Determine the spatial location in the output
-        int h_out = col / Width_out_unroll;
-        int w_out = col % Width_out_unroll;
+        int h_out = col / Width_out;
+        int w_out = col % Width_out;
 
         // Fetch the corresponding input value
         float val = in_4d(batch, channel, h_out + k_row, w_out + k_col);
@@ -146,51 +142,24 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 
     // Allocate device memory for input
     cudaMalloc((void**)device_input_ptr, Batch * Channel * Height * Width * sizeof(float));
+
+    // Allocate device memory for mask
+    cudaMalloc((void**)device_mask_ptr, Map_out * Channel * K * K * sizeof(float));
+
+    // Allocate device memory for output
+    cudaMalloc((void**)device_output_ptr, Batch * Map_out * (Height - K + 1) * (Width - K + 1) * sizeof(float));
+
+    // Copy input from host to device
+    cudaMemcpy(*device_input_ptr, host_input, Batch * Channel * Height * Width * sizeof(float), cudaMemcpyHostToDevice);
+
+    // Copy mask from host to device
+    cudaMemcpy(*device_mask_ptr, host_mask, Map_out * Channel * K * K * sizeof(float), cudaMemcpyHostToDevice);
+
     // Error checking
     cudaError_t error = cudaGetLastError();
     if(error != cudaSuccess)
     {
-        std::cout << "CUDA error (malloc device_input_ptr): " << cudaGetErrorString(error) << std::endl;
-        exit(-1);
-    }
-
-    // Allocate device memory for mask
-    cudaMalloc((void**)device_mask_ptr, Map_out * Channel * K * K * sizeof(float));
-    // Error checking
-    error = cudaGetLastError();
-    if(error != cudaSuccess)
-    {
-        std::cout << "CUDA error (malloc device_mask_ptr): " << cudaGetErrorString(error) << std::endl;
-        exit(-1);
-    }
-
-    // Allocate device memory for output
-    cudaMalloc((void**)device_output_ptr, Batch * Map_out * (Height - K + 1) * (Width - K + 1) * sizeof(float));
-    // Error checking
-    error = cudaGetLastError();
-    if(error != cudaSuccess)
-    {
-        std::cout << "CUDA error (malloc device_output_ptr): " << cudaGetErrorString(error) << std::endl;
-        exit(-1);
-    }
-
-    // Copy input from host to device
-    cudaMemcpy(*device_input_ptr, host_input, Batch * Channel * Height * Width * sizeof(float), cudaMemcpyHostToDevice);
-    // Error checking
-    error = cudaGetLastError();
-    if(error != cudaSuccess)
-    {
-        std::cout << "CUDA error (memcpy host_input to device_input_ptr): " << cudaGetErrorString(error) << std::endl;
-        exit(-1);
-    }
-
-    // Copy mask from host to device
-    cudaMemcpy(*device_mask_ptr, host_mask, Map_out * Channel * K * K * sizeof(float), cudaMemcpyHostToDevice);
-    // Error checking
-    error = cudaGetLastError();
-    if(error != cudaSuccess)
-    {
-        std::cout << "CUDA error (memcpy host_mask to device_mask_ptr): " << cudaGetErrorString(error) << std::endl;
+        std::cout << "CUDA error in conv_forward_gpu_prolog: " << cudaGetErrorString(error) << std::endl;
         exit(-1);
     }
 
@@ -209,27 +178,13 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     float *unrolled_matrix;  // Pointer to device memory for storing the unrolled matrix
     float *matmul_output;    // Pointer to device memory for storing the result of matrix multiplication
     cudaMalloc((void**)&unrolled_matrix, (size_t) Batch * Channel * K * K * Height_out * Width_out * sizeof(float));
-    // Error checking
-    cudaError_t error = cudaGetLastError();
-    if(error != cudaSuccess)
-    {
-        std::cout << "CUDA error (malloc device_output_ptr): " << cudaGetErrorString(error) << std::endl;
-        exit(-1);
-    }
-
     cudaMalloc((void**)&matmul_output, (Batch * Map_out * Height_out * Width_out) * sizeof(float));
-    error = cudaGetLastError();
-    if(error != cudaSuccess)
-    {
-        std::cout << "CUDA error (malloc matmul_output): " << cudaGetErrorString(error) << std::endl;
-        exit(-1);
-    }
 
     // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
     
     // Define block and grid dimensions for the unrolling kernel
     dim3 blockDim_unroll(16, 16, 1); // 16x16 threads per block
-    dim3 gridDim_unroll( (Width_unrolled + blockDim_unroll.x - 1) / blockDim_unroll.x,
+    dim3 gridDim_unroll( (Width_out + blockDim_unroll.x - 1) / blockDim_unroll.x,
                          (Batch * Channel * K * K + blockDim_unroll.y - 1) / blockDim_unroll.y,
                          1 );
 
@@ -238,14 +193,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         device_input, unrolled_matrix,
         Batch, Channel, Height, Width, K
     );
-
-    // Error checking after unrolling kernel launch
-    error = cudaGetLastError();
-    if(error != cudaSuccess)
-    {
-        std::cout << "CUDA error (matrix_unrolling_kernel): " << cudaGetErrorString(error) << std::endl;
-        exit(-1);
-    }
 
     // TODO: Set the kernel dimensions and call the matmul kernel
 
@@ -275,14 +222,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         numCRows, numCColumns
     );
 
-    // Error checking after matmul kernel launch
-    error = cudaGetLastError();
-    if(error != cudaSuccess)
-    {
-        std::cout << "CUDA error (matrixMultiplyShared): " << cudaGetErrorString(error) << std::endl;
-        exit(-1);
-    }
-
     // Permute the result of matrix multiplication
     const int out_image_size = Height_out * Width_out;
     dim3 permute_kernel_grid_dim((out_image_size - 1) / BLOCK_SIZE + 1, Batch, 1);
@@ -292,7 +231,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
 
     cudaFree(matmul_output);
     cudaFree(unrolled_matrix);
-    error = cudaGetLastError();
+    cudaError_t error = cudaGetLastError();
     if(error != cudaSuccess)
     {
         std::cout << "CUDA error (freeing unrolled_matrix or matmul_output): " << cudaGetErrorString(error) << std::endl;
@@ -306,13 +245,6 @@ __host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *d
     // TODO: Copy the output back to host
     // Copy the output from device to host
     cudaMemcpy(host_output, device_output, Batch * Map_out * (Height - K + 1) * (Width - K + 1) * sizeof(float), cudaMemcpyDeviceToHost);
-    // Error checking
-    cudaError_t error = cudaGetLastError();
-    if(error != cudaSuccess)
-    {
-        std::cout << "CUDA error (memcpy device_output to host_output): " << cudaGetErrorString(error) << std::endl;
-        exit(-1);
-    }
 
     // TODO: Free device memory
 
