@@ -207,7 +207,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     float *matmul_output;    // Pointer to device memory for storing the result of matrix multiplication
     cudaMalloc((void**)&unrolled_matrix, (size_t) Batch * Channel * K * K * Height_out * Width_out * sizeof(float));
     // Error checking
-    error = cudaGetLastError();
+    cudaError_t error = cudaGetLastError();
     if(error != cudaSuccess)
     {
         std::cout << "CUDA error (malloc device_output_ptr): " << cudaGetErrorString(error) << std::endl;
