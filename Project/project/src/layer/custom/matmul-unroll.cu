@@ -32,14 +32,19 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     const int H_unroll = Channel * K * K;
     const int W_unroll = Batch * Height_out * Width_out;
 
-    const int total_elements = H_unroll * W_unroll;
+    //testing
+    // const int total_elements = H_unroll * W_unroll;
 
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    // int index = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (index < total_elements) {
-        int h_unroll = index / W_unroll;
-        int w_unroll = index % W_unroll;
+    // Calculate h_unroll and w_unroll using 2D grid and block indices
+    int h_unroll = blockIdx.y * blockDim.y + threadIdx.y;
+    int w_unroll = blockIdx.x * blockDim.x + threadIdx.x;
 
+    // if (index < total_elements) {
+    //     int h_unroll = index / W_unroll;
+    //     int w_unroll = index % W_unroll;
+    if (h_unroll < H_unroll && w_unroll < W_unroll) {
         int c = h_unroll / (K * K);
         int p = (h_unroll % (K * K)) / K;
         int q = (h_unroll % (K * K)) % K;
@@ -181,13 +186,22 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     
     // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
     
-    int total_unrolled_elements = Height_unrolled * Width_unrolled;
-    int threads_per_block = BLOCK_SIZE;
-    int num_blocks = (total_unrolled_elements + threads_per_block - 1) / threads_per_block;
+    // int total_unrolled_elements = Height_unrolled * Width_unrolled;
+    // int threads_per_block = BLOCK_SIZE;
+    // int num_blocks = (total_unrolled_elements + threads_per_block - 1) / threads_per_block;
+
+    // // Call the matrix unrolling kernel
+    // matrix_unrolling_kernel<<<num_blocks, threads_per_block>>>(device_input, unrolled_matrix,
+    //                                                            Batch, Channel, Height, Width, K);
+
+    // Set the kernel dimensions for unrolling using a 2D grid
+    dim3 blockDim_unroll(16, 16);
+    dim3 gridDim_unroll((Width_unrolled + blockDim_unroll.x - 1) / blockDim_unroll.x,
+                        (Height_unrolled + blockDim_unroll.y - 1) / blockDim_unroll.y);
 
     // Call the matrix unrolling kernel
-    matrix_unrolling_kernel<<<num_blocks, threads_per_block>>>(device_input, unrolled_matrix,
-                                                               Batch, Channel, Height, Width, K);
+    matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll>>>(device_input, unrolled_matrix,
+                                                                 Batch, Channel, Height, Width, K);
 
     // Check for errors
     cudaError_t error = cudaGetLastError();
