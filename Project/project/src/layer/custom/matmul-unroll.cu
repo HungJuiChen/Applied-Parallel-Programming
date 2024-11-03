@@ -39,11 +39,6 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     int b = blockIdx.x; // Batch index
     int h_unroll = threadIdx.x; // Row index in the unrolled matrix
 
-    if (h_unroll >= Channel * K * K) {
-    printf("h_unroll out of bounds: %d >= %d\n", h_unroll, Channel * K * K);
-    return;
-    }
-
     if (h_unroll < Channel * K * K) {
         int c = h_unroll / (K * K);
         int p = (h_unroll % (K * K)) / K;
@@ -175,6 +170,9 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     const int Height_unrolled = Channel * K * K;
     const int Width_unrolled = Batch * Height_out * Width_out;
 
+    #define UNROLL_BLOCK_SIZE 256
+    int blocks_per_batch = (Height_unrolled + UNROLL_BLOCK_SIZE - 1) / UNROLL_BLOCK_SIZE;
+
     float *unrolled_matrix;  // Pointer to device memory for storing the unrolled matrix
     float *matmul_output;    // Pointer to device memory for storing the result of matrix multiplication
 
@@ -189,8 +187,8 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     checkCudaError(err, "Failed to allocate device memory for matmul output");
     
     // Launch matrix unrolling kernel and check for errors
-    dim3 unroll_grid_dim(Batch);
-    dim3 unroll_block_dim(Height_unrolled);
+    dim3 unroll_grid_dim(Batch, blocks_per_batch);
+    dim3 unroll_block_dim(UNROLL_BLOCK_SIZE);
     matrix_unrolling_kernel<<<unroll_grid_dim, unroll_block_dim>>>(device_input, unrolled_matrix, Batch, Channel, Height, Width, K);
     cudaDeviceSynchronize();
     err = cudaGetLastError();
