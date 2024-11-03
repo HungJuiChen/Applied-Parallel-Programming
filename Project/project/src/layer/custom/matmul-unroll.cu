@@ -39,6 +39,11 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     int b = blockIdx.x; // Batch index
     int h_unroll = threadIdx.x; // Row index in the unrolled matrix
 
+    if (h_unroll >= Channel * K * K) {
+    printf("h_unroll out of bounds: %d >= %d\n", h_unroll, Channel * K * K);
+    return;
+    }
+
     if (h_unroll < Channel * K * K) {
         int c = h_unroll / (K * K);
         int p = (h_unroll % (K * K)) / K;
@@ -47,10 +52,7 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
         for (int h = 0; h < Height_out; ++h) {
             for (int w = 0; w < Width_out; ++w) {
                 int w_unroll = h * Width_out + w;
-                if ((h + p) < Height && (w + q) < Width) {
-                    out_2d(h_unroll + b * (Channel * K * K), w_unroll) = in_4d(b, c, h + p, w + q);
-                }
-                //out_2d(h_unroll + b * (Channel * K * K), w_unroll) = in_4d(b, c, h + p, w + q);
+                out_2d(h_unroll + b * (Channel * K * K), w_unroll) = in_4d(b, c, h + p, w + q);
             }
         }
     }
