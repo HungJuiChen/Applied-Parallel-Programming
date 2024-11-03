@@ -187,6 +187,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     dim3 unroll_grid_dim(Batch);
     dim3 unroll_block_dim(Height_unrolled);
     matrix_unrolling_kernel<<<unroll_grid_dim, unroll_block_dim>>>(device_input, unrolled_matrix, Batch, Channel, Height, Width, K);
+    cudaDeviceSynchronize();
     err = cudaGetLastError();
     checkCudaError(err, "Kernel launch failure for matrix_unrolling_kernel");
 
