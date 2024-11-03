@@ -176,7 +176,9 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
 
     float *unrolled_matrix;  // Pointer to device memory for storing the unrolled matrix
     float *matmul_output;    // Pointer to device memory for storing the result of matrix multiplication
-
+    cudaMalloc((void**)&unrolled_matrix, Height_unrolled * Width_unrolled * sizeof(float));
+    cudaMalloc((void**)&matmul_output, Map_out * Width_unrolled * sizeof(float));
+    
     // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
     
     int total_unrolled_elements = Height_unrolled * Width_unrolled;
@@ -226,8 +228,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE>>>(
         matmul_output, device_output, Map_out, Batch, out_image_size
     );
-    err = cudaGetLastError();
-    checkCudaError(err, "Kernel launch failure for matrix_permute_kernel");
 
     cudaFree(matmul_output);
     cudaFree(unrolled_matrix);
