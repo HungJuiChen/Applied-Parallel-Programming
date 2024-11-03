@@ -47,7 +47,10 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
         for (int h = 0; h < Height_out; ++h) {
             for (int w = 0; w < Width_out; ++w) {
                 int w_unroll = h * Width_out + w;
-                out_2d(h_unroll + b * (Channel * K * K), w_unroll) = in_4d(b, c, h + p, w + q);
+                if ((h + p) < Height && (w + q) < Width) {
+                    out_2d(h_unroll + b * (Channel * K * K), w_unroll) = in_4d(b, c, h + p, w + q);
+                }
+                //out_2d(h_unroll + b * (Channel * K * K), w_unroll) = in_4d(b, c, h + p, w + q);
             }
         }
     }
