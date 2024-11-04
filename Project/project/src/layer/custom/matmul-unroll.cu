@@ -33,18 +33,11 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     const int H_unroll = Channel * K * K;
     const int W_unroll = Batch * Height_out * Width_out;
 
-    //testing
-    // const int total_elements = H_unroll * W_unroll;
-
-    // int index = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Calculate h_unroll and w_unroll using 2D grid and block indices
     int h_unroll = blockIdx.y * blockDim.y + threadIdx.y;
     int w_unroll = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // if (index < total_elements) {
-    //     int h_unroll = index / W_unroll;
-    //     int w_unroll = index % W_unroll;
     if (h_unroll < H_unroll && w_unroll < W_unroll) {
         int c = h_unroll / (K * K);
         int p = (h_unroll % (K * K)) / K;
@@ -185,9 +178,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
 
     float *unrolled_matrix;  // Pointer to device memory for storing the unrolled matrix
     float *matmul_output;    // Pointer to device memory for storing the result of matrix multiplication
-    //testing
-    // cudaMalloc((void**)&unrolled_matrix, Height_unrolled * Width_unrolled * sizeof(float));
-    // cudaMalloc((void**)&matmul_output, Map_out * Width_unrolled * sizeof(float));
     
     // Allocate device memory for unrolled_matrix and matmul_output for the maximum mini-batch size
     size_t max_unroll_size = Height_unrolled * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
@@ -198,13 +188,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     
     // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
     
-    // int total_unrolled_elements = Height_unrolled * Width_unrolled;
-    // int threads_per_block = BLOCK_SIZE;
-    // int num_blocks = (total_unrolled_elements + threads_per_block - 1) / threads_per_block;
 
-    // // Call the matrix unrolling kernel
-    // matrix_unrolling_kernel<<<num_blocks, threads_per_block>>>(device_input, unrolled_matrix,
-    //                                                            Batch, Channel, Height, Width, K);
     // Iterate over each mini-batch
     for(int batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
         // Calculate the current mini-batch size
@@ -216,10 +200,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         dim3 blockDim_unroll(16, 16);
         dim3 gridDim_unroll((current_W_unroll + blockDim_unroll.x - 1) / blockDim_unroll.x,
                             (Height_unrolled + blockDim_unroll.y - 1) / blockDim_unroll.y);
-
-    // // Call the matrix unrolling kernel
-    // matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll>>>(device_input, unrolled_matrix,
-    //                                                              Batch, Channel, Height, Width, K);
         
         // Call the matrix unrolling kernel for the current mini-batch
         matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll>>>(
@@ -268,9 +248,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         // Permute the result of matrix multiplication
         const int out_image_size = Height_out * Width_out;
         dim3 permute_kernel_grid_dim((out_image_size - 1) / BLOCK_SIZE + 1, current_batch_size, 1);
-        // matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE>>>(
-        //     matmul_output, device_output, Map_out, current_batch_size, out_image_size
-        // );
+
         matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE>>>(
             matmul_output, 
             device_output + batch_idx * MAX_BATCH_SIZE * Map_out * out_image_size, // Offset output pointer
