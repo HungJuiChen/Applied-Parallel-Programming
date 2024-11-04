@@ -178,7 +178,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
     const int Height_unrolled = Channel * K * K;
-    const int Width_unrolled = Batch * Height_out * Width_out;
+    //const int Width_unrolled = Batch * Height_out * Width_out;
 
     // Determine the number of mini-batches
     int num_batches = (Batch + MAX_BATCH_SIZE - 1) / MAX_BATCH_SIZE;
@@ -190,7 +190,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     // cudaMalloc((void**)&matmul_output, Map_out * Width_unrolled * sizeof(float));
     
     // Allocate device memory for unrolled_matrix and matmul_output for the maximum mini-batch size
-    size_t max_unroll_size = H_unroll * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
+    size_t max_unroll_size = Height_unrolled * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
     cudaMalloc((void**)&unrolled_matrix, max_unroll_size);
 
     size_t max_matmul_size = Map_out * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
@@ -214,7 +214,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         int current_W_unroll = current_batch_size * Height_out * Width_out;
         // Set the kernel dimensions for unrolling using a 2D grid
         dim3 blockDim_unroll(16, 16);
-        dim3 gridDim_unroll((current_W_unrolled + blockDim_unroll.x - 1) / blockDim_unroll.x,
+        dim3 gridDim_unroll((current_W_unroll + blockDim_unroll.x - 1) / blockDim_unroll.x,
                             (Height_unrolled + blockDim_unroll.y - 1) / blockDim_unroll.y);
 
     // // Call the matrix unrolling kernel
