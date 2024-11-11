@@ -36,11 +36,10 @@ __global__ void rgbToGrayscale(const unsigned char *rgbImage, unsigned char *gra
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int numPixels = width * height;
     if (idx < numPixels) {
-        int rgbIdx = 3 * idx; // Assuming 3 channels (RGB)
+        int rgbIdx = 3 * idx; 
         unsigned char r = rgbImage[rgbIdx];
         unsigned char g = rgbImage[rgbIdx + 1];
         unsigned char b = rgbImage[rgbIdx + 2];
-        // Using the luminosity method coefficients
         grayImage[idx] = (unsigned char)(0.21f * r + 0.71f * g + 0.07f * b);
     }
 }
@@ -126,28 +125,21 @@ int main(int argc, char **argv) {
     unsigned char *deviceEqualizeMap;
     float *deviceOutputFloat;
 
-    // Allocate device memory for input image (float)
+    // Allocate device memory 
     wbCheck(cudaMalloc((void **)&deviceInput, inputSize));
-    // Copy input image data from host to device
     wbCheck(cudaMemcpy(deviceInput, hostInputImageData, inputSize, cudaMemcpyHostToDevice));
-
-    // Allocate device memory for unsigned char input
+    
     wbCheck(cudaMalloc((void **)&deviceUCharInput, numPixels * imageChannels * sizeof(unsigned char)));
-
-    // Allocate device memory for grayscale image
+ 
     wbCheck(cudaMalloc((void **)&deviceGrayImage, numPixels * sizeof(unsigned char)));
 
-    // Allocate device memory for equalized image
     wbCheck(cudaMalloc((void **)&deviceEqualizedImage, numPixels * imageChannels * sizeof(unsigned char)));
 
-    // Allocate device memory for histogram and initialize to zero
     wbCheck(cudaMalloc((void **)&deviceHistogram, HISTOGRAM_LENGTH * sizeof(int)));
     wbCheck(cudaMemset(deviceHistogram, 0, HISTOGRAM_LENGTH * sizeof(int)));
 
-    // Allocate device memory for equalize map
     wbCheck(cudaMalloc((void **)&deviceEqualizeMap, HISTOGRAM_LENGTH * sizeof(unsigned char)));
 
-    // Allocate device memory for output float image
     wbCheck(cudaMalloc((void **)&deviceOutputFloat, inputSize));
     //@@ Insert code here: Define block and grid sizes
 

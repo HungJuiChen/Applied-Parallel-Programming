@@ -33,18 +33,18 @@ __global__ void scan_block_kernel(float *input, float *output, float *block_sums
   }
   __syncthreads();
 
-  // Up-sweep (reduction) phase
+  // reduction phase
   for (int stride = 1; stride <= tid; stride <<= 1) {
     float temp = 0;
     if (tid >= stride) {
       temp = shared_data[tid - stride];
     }
-    __syncthreads(); // Ensure all threads read the values before updating
+    __syncthreads(); 
 
     if (tid >= stride) {
       shared_data[tid] += temp;
     }
-    __syncthreads(); // Ensure all threads finish the addition
+    __syncthreads(); 
   }
 
   // Store the last element of each block into block_sums
@@ -83,18 +83,18 @@ __global__ void scan(float *input, float *output, int len) {
   }
   __syncthreads();
 
-  // Up-sweep (reduction) phase
+  // reduction phase
   for (int stride = 1; stride <= tid; stride <<= 1) {
     float temp = 0;
     if (tid >= stride) {
       temp = shared_data[tid - stride];
     }
-    __syncthreads(); // Synchronize before modifying shared memory
+    __syncthreads(); 
 
     if (tid >= stride) {
       shared_data[tid] += temp;
     }
-    __syncthreads(); // Synchronize after updating shared memory
+    __syncthreads();
   }
 
   // Write the results to output
@@ -121,15 +121,15 @@ int main(int argc, char **argv) {
   hostOutput = (float *)malloc(numElements * sizeof(float));
 
 
-  // Allocate GPU memory.
+  // Allocate GPU memory
   wbCheck(cudaMalloc((void **)&deviceInput, numElements * sizeof(float)));
   wbCheck(cudaMalloc((void **)&deviceOutput, numElements * sizeof(float)));
 
 
-  // Clear output memory.
+  // Clear output memory
   wbCheck(cudaMemset(deviceOutput, 0, numElements * sizeof(float)));
 
-  // Copy input memory to the GPU.
+  // Copy input memory to the GPU
   wbCheck(cudaMemcpy(deviceInput, hostInput, numElements * sizeof(float),
                      cudaMemcpyHostToDevice));
 
@@ -145,15 +145,15 @@ int main(int argc, char **argv) {
   //@@ Modify this to complete the functionality of the scan
   //@@ on the deivce
 
-  // First, perform scan on each block
+  // perform scan on each block
   scan_block_kernel<<<gridDim, blockDim>>>(deviceInput, deviceOutput, deviceBlockSums, numElements);
   cudaDeviceSynchronize();
 
-  // Then, perform scan on block sums array
+  // perform scan on block sums array
   scan<<<1, BLOCK_SIZE>>>(deviceBlockSums, deviceScannedBlockSums, numBlocks);
   cudaDeviceSynchronize();
   
-  // Finally, add the scanned block sums to the per-block scan results
+  // add the scanned block sums to the per-block scan results
   add_block_sums<<<gridDim, blockDim>>>(deviceOutput, deviceScannedBlockSums, numElements);
   cudaDeviceSynchronize();
 

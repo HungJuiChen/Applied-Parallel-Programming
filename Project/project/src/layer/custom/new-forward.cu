@@ -134,7 +134,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
 
     conv_forward_kernel<<<gridDim, blockDim>>>(device_output, device_input, device_mask, Batch, Map_out, Channel, Height, Width, K);
     
-    // Useful snippet for error checking
     cudaError_t error = cudaGetLastError();
     if (error != cudaSuccess)
     {

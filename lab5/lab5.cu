@@ -29,14 +29,14 @@ __global__ void total(float *input, float *output, int len) {
       partialSum[tid] = 0.0f;
   }
 
-  __syncthreads();  // Synchronize to ensure all threads have written to shared memory
+  __syncthreads();  
 
   // Reduction in shared memory
   for (int stride = BLOCK_SIZE / 2; stride > 0; stride >>= 1) {
       if (tid < stride) {
           partialSum[tid] += partialSum[tid + stride];
       }
-      __syncthreads();  // Ensure all threads have completed this step before moving on
+      __syncthreads(); 
   }
 
   // Write the result of this block's reduction to the output array
