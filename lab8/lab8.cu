@@ -19,14 +19,13 @@ __global__ void spmvJDSKernel(float *out, int *matColStart, int *matCols,
     float dot = 0.0f;
     unsigned int sec = 0;
 
-    // Traverse the columns in JDS format
-    while (matColStart[sec + 1] - matColStart[sec] > row) {
-        int data_index = matColStart[sec] + row;
-        dot += matData[data_index] * vec[matCols[data_index]];
-        sec++;
+    //while (matColStart[sec + 1] - matColStart[sec] > row) {
+    while (sec < matRows[row]) {
+      int data_index = matColStart[sec] + row;
+      dot += matData[data_index] * vec[matCols[data_index]];
+      sec++;
     }
 
-    // Write the result to the output at the permuted row position
     out[matRowPerm[row]] = dot;
   }
 }
@@ -36,11 +35,14 @@ static void spmvJDS(float *out, int *matColStart, int *matCols,
                     float *vec, int dim) {
 
   //@@ invoke spmv kernel for jds format
-  int threadsPerBlock = 256;
-  int blocksPerGrid = (dim + threadsPerBlock - 1) / threadsPerBlock;
-  
-  spmvJDSKernel<<<blocksPerGrid, threadsPerBlock>>>(
-    out, matColStart, matCols, matRowPerm, matRows, matData, vec, dim);
+  int blockSize = 256;
+  int gridSize = (dim + blockSize - 1) / blockSize;
+
+  spmvJDSKernel<<<gridSize, blockSize>>>(out, matColStart, matCols,
+                                        matRowPerm, matRows,
+                                        matData, vec, dim);
+
+  wbCheck(cudaGetLastError());
 }
 
 int main(int argc, char **argv) {
