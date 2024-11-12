@@ -17,13 +17,10 @@ __global__ void spmvJDSKernel(float *out, int *matColStart, int *matCols,
   int row = blockIdx.x * blockDim.x + threadIdx.x;
   if (row < dim) {
     float dot = 0.0f;
-    unsigned int sec = 0;
 
-    //while (matColStart[sec + 1] - matColStart[sec] > row) {
-    while (sec < matRows[row]) {
+    for (int sec = 0; sec <  matRows[row]; sec++){
       int data_index = matColStart[sec] + row;
       dot += matData[data_index] * vec[matCols[data_index]];
-      sec++;
     }
 
     out[matRowPerm[row]] = dot;
