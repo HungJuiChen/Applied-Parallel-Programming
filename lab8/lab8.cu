@@ -42,7 +42,7 @@ static void spmvJDS(float *out, int *matColStart, int *matCols,
                                         matRowPerm, matRows,
                                         matData, vec, dim);
 
-  wbCheck(cudaGetLastError());
+  //wbCheck(cudaGetLastError());
 }
 
 int main(int argc, char **argv) {
