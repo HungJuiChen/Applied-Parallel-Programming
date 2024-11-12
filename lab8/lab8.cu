@@ -17,16 +17,17 @@ __global__ void spmvJDSKernel(float *out, int *matColStart, int *matCols,
   int row = blockIdx.x * blockDim.x + threadIdx.x;
   if (row < dim) {
     float dot = 0.0f;
-    int row_start = matRowPerm[row];
-    int nnz_per_row = matRows[row];
+    unsigned int sec = 0;
 
-    for (int j = 0; j < nnz_per_row; j++) {
-      int col_index = matCols[row_start + j];
-      float val = matData[row_start + j];
-      dot += val * vec[col_index];
+    // Traverse the columns in JDS format
+    while (matColStart[sec + 1] - matColStart[sec] > row) {
+        int data_index = matColStart[sec] + row;
+        dot += matData[data_index] * vec[matCols[data_index]];
+        sec++;
     }
 
-    out[row] = dot;
+    // Write the result to the output at the permuted row position
+    out[matRowPerm[row]] = dot;
   }
 }
 
