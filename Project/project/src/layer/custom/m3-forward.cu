@@ -218,6 +218,11 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     
     // Iterate over each mini-batch
     for(int batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
+
+        // Determine the current stream
+        int stream_id = batch_idx % NUM_STREAMS;
+        cudaStream_t stream = streams[stream_id];
+
         // Calculate the current mini-batch size
         int current_batch_size = (batch_idx == num_batches - 1) ? (Batch - batch_idx * MAX_BATCH_SIZE) : MAX_BATCH_SIZE;
 
@@ -352,6 +357,11 @@ __host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *d
     cudaFree(device_output);
     cudaFree(device_input);
     cudaFree(device_mask);
+
+    // Free pinned host memory
+    cudaFreeHost(host_input_pinned);
+    cudaFreeHost(host_mask_pinned);
+    cudaFreeHost(host_output_pinned);
 
     // Destroy CUDA Streams
     for(int i = 0; i < NUM_STREAMS; ++i){
