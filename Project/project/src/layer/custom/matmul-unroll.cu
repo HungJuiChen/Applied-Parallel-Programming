@@ -171,7 +171,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
     const int Height_unrolled = Channel * K * K;
-    //const int Width_unrolled = Batch * Height_out * Width_out;
 
     // Determine the number of mini-batches
     int num_batches = (Batch + MAX_BATCH_SIZE - 1) / MAX_BATCH_SIZE;
@@ -187,7 +186,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     cudaMalloc((void**)&matmul_output, max_matmul_size);
     
     // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
-    
 
     // Iterate over each mini-batch
     for(int batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
@@ -212,7 +210,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             K
         );
 
-        // Check for errors
+        
         cudaError_t error = cudaGetLastError();
         if(error != cudaSuccess)
         {
@@ -237,7 +235,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
                                                     numBRows, numBColumns,
                                                     numCRows, numCColumns);
 
-        // Check for errors
+        
         error = cudaGetLastError();
         if(error != cudaSuccess)
         {
@@ -287,7 +285,6 @@ __host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *d
     cudaFree(device_input);
     cudaFree(device_mask);
 
-    // Check for errors
     cudaError_t error = cudaGetLastError();
     if(error != cudaSuccess)
     {
