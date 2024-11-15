@@ -6,7 +6,7 @@
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
 
-__global__ void matrix_unrolling_kernel(const float *input, float *output,
+__global__ void matrix_unrolling_kernel(const float *__restrict__ input, float *__restrict__ output,
                                         const int Batch, const int Channel,
                                         const int Height, const int Width,
                                         const int K) {
@@ -166,7 +166,7 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 }
 
 
-__host__ void GPUInterface::conv_forward_gpu(float *__restrict__ device_output, const float *__restrict__ device_input, const float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
+__host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *device_input, const float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
