@@ -249,9 +249,16 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
 
         // Permute the result of matrix multiplication
         const int out_image_size = Height_out * Width_out;
-        dim3 permute_kernel_grid_dim((out_image_size - 1) / BLOCK_SIZE + 1, Batch, 1);
+        dim3 permute_kernel_grid_dim((out_image_size - 1) / BLOCK_SIZE + 1, current_batch_size, 1);
+        // matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE>>>(
+        //     matmul_output, device_output, Map_out, Batch, out_image_size
+        // );
         matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE>>>(
-            matmul_output, device_output, Map_out, Batch, out_image_size
+            matmul_output, 
+            device_output + batch_idx * MAX_BATCH_SIZE * Map_out * out_image_size, // Offset output pointer
+            Map_out, 
+            current_batch_size, 
+            out_image_size
         );
 
         // Check for errors after permutation
