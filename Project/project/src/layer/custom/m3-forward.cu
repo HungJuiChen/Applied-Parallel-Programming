@@ -9,7 +9,7 @@
 
 // Global variables to store host pointers
 const float *global_host_input;
-float *global_host_output;
+const float *global_host_output;
 const float *global_host_mask;
 
 __global__ void matrix_unrolling_kernel(const float *input, float *output,
