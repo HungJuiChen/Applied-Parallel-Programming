@@ -1,7 +1,7 @@
 #include <cmath>
 #include <iostream>
 #include "gpu-new-forward.h"
-#include <cuda_runtime.h>
+
 
 #define TILE_WIDTH 16
 #define BLOCK_SIZE 256
