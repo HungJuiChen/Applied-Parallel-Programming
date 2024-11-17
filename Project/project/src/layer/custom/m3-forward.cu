@@ -7,16 +7,10 @@
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
 
-//apply global variables and stream definition for req_0
-#define NUM_STREAMS 4
-
-// Host pinned memory pointers
-static float *host_input_pinned = nullptr;
-static float *host_mask_pinned = nullptr;
-static float *host_output_pinned = nullptr;
-
-// CUDA Streams
-static cudaStream_t streams[NUM_STREAMS];
+// Global variables to store host pointers
+const float *global_host_input;
+const float *global_host_output;
+const float *global_host_mask;
 
 __global__ void matrix_unrolling_kernel(const float *input, float *output,
                                         const int Batch, const int Channel,
@@ -152,34 +146,44 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
     // }
 
     // Allocate pinned host memory for input and mask
-    size_t input_size = Batch * Channel * Height * Width * sizeof(float);
-    cudaMallocHost((void**)&host_input_pinned, input_size);
-    memcpy(host_input_pinned, host_input, input_size);
+    // size_t input_size = Batch * Channel * Height * Width * sizeof(float);
+    // cudaMallocHost((void**)&host_input_pinned, input_size);
+    // memcpy(host_input_pinned, host_input, input_size);
 
+    // size_t mask_size = Map_out * Channel * K * K * sizeof(float);
+    // cudaMallocHost((void**)&host_mask_pinned, mask_size);
+    // memcpy(host_mask_pinned, host_mask, mask_size);
+
+    // // Allocate device memory for input
+    // cudaMalloc((void**) device_input_ptr, input_size);
+    // // Asynchronously copy input to device using stream 0
+    // cudaMemcpyAsync(*device_input_ptr, host_input_pinned, input_size, cudaMemcpyHostToDevice, streams[0]);
+
+    // // Allocate device memory for output
+    // const int Height_out = Height - K + 1;
+    // const int Width_out = Width - K + 1;
+    // size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
+    // cudaMalloc((void**) device_output_ptr, output_size);
+
+    // // Allocate device memory for mask
+    // cudaMalloc((void**) device_mask_ptr, mask_size);
+    // // Asynchronously copy mask to device using stream 0
+    // cudaMemcpyAsync(*device_mask_ptr, host_mask_pinned, mask_size, cudaMemcpyHostToDevice, streams[0]);
+
+    // // Initialize CUDA Streams
+    // for(int i = 0; i < NUM_STREAMS; ++i){
+    //     cudaStreamCreate(&streams[i]);
+    // }
+
+    // Store host pointers in global variables
+    global_host_input = host_input;
+    global_host_output = host_output;
+    global_host_mask = host_mask;
+
+    // Allocate device memory for mask (since it doesn't change, we can do this once)
     size_t mask_size = Map_out * Channel * K * K * sizeof(float);
-    cudaMallocHost((void**)&host_mask_pinned, mask_size);
-    memcpy(host_mask_pinned, host_mask, mask_size);
-
-    // Allocate device memory for input
-    cudaMalloc((void**) device_input_ptr, input_size);
-    // Asynchronously copy input to device using stream 0
-    cudaMemcpyAsync(*device_input_ptr, host_input_pinned, input_size, cudaMemcpyHostToDevice, streams[0]);
-
-    // Allocate device memory for output
-    const int Height_out = Height - K + 1;
-    const int Width_out = Width - K + 1;
-    size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
-    cudaMalloc((void**) device_output_ptr, output_size);
-
-    // Allocate device memory for mask
     cudaMalloc((void**) device_mask_ptr, mask_size);
-    // Asynchronously copy mask to device using stream 0
-    cudaMemcpyAsync(*device_mask_ptr, host_mask_pinned, mask_size, cudaMemcpyHostToDevice, streams[0]);
-
-    // Initialize CUDA Streams
-    for(int i = 0; i < NUM_STREAMS; ++i){
-        cudaStreamCreate(&streams[i]);
-    }
+    cudaMemcpy(*device_mask_ptr, host_mask, mask_size, cudaMemcpyHostToDevice);
 
     // Check for errors
     cudaError_t error = cudaGetLastError();
@@ -213,16 +217,21 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     cudaMalloc((void**)&unrolled_matrix, max_unroll_size);
 
     size_t max_matmul_size = Map_out * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
-    
     cudaMalloc((void**)&matmul_output, max_matmul_size);
+
+    // Create CUDA streams
+    cudaStream_t stream1, stream2;
+    cudaStreamCreate(&stream1);
+    cudaStreamCreate(&stream2);
+
     // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
     
     // Iterate over each mini-batch
     for(int batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
 
         // Determine the current stream
-        int stream_id = batch_idx % NUM_STREAMS;
-        cudaStream_t stream = streams[stream_id];
+        //int stream_id = batch_idx % NUM_STREAMS;
+        //cudaStream_t stream = streams[stream_id];
 
         // Calculate the current mini-batch size
         int current_batch_size = (batch_idx == num_batches - 1) ? (Batch - batch_idx * MAX_BATCH_SIZE) : MAX_BATCH_SIZE;
@@ -230,10 +239,28 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         // Calculate current W_unroll
         int current_W_unroll = current_batch_size * Height_out * Width_out;
         // Set the kernel dimensions for unrolling using a 2D grid
+        
+        // Allocate device memory for input and output of current batch
+        float *device_input_batch;
+        float *device_output_batch;
+        size_t input_batch_size = current_batch_size * Channel * Height * Width * sizeof(float);
+        size_t output_batch_size = current_batch_size * Map_out * Height_out * Width_out * sizeof(float);
+
+        cudaMallocAsync((void**)&device_input_batch, input_batch_size, stream1);
+        cudaMallocAsync((void**)&device_output_batch, output_batch_size, stream1);
+
+        // Asynchronously copy input data of current batch
+        cudaMemcpyAsync(device_input_batch,
+                        global_host_input + batch_idx * MAX_BATCH_SIZE * Channel * Height * Width,
+                        input_batch_size, cudaMemcpyHostToDevice, stream1);
+        
         dim3 blockDim_unroll(16, 16);
         dim3 gridDim_unroll((current_W_unroll + blockDim_unroll.x - 1) / blockDim_unroll.x,
                             (Height_unrolled + blockDim_unroll.y - 1) / blockDim_unroll.y);
         
+        // Synchronize stream1 to ensure data is copied before kernel execution
+        cudaStreamSynchronize(stream1);
+
         // Call the matrix unrolling kernel for the current mini-batch
         // matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll>>>(
         //     device_input + batch_idx * MAX_BATCH_SIZE * Channel * Height * Width, // Offset input pointer
@@ -246,17 +273,20 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         // );
 
         // Asynchronously call the matrix unrolling kernel on the current stream
-        matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll, 0, stream>>>(
-            device_input + batch_idx * MAX_BATCH_SIZE * Channel * Height * Width, // Offset input pointer
-            unrolled_matrix, 
-            current_batch_size, 
-            Channel, 
-            Height, 
-            Width, 
-            K
-        );
+        // matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll, 0, stream>>>(
+        //     device_input + batch_idx * MAX_BATCH_SIZE * Channel * Height * Width, // Offset input pointer
+        //     unrolled_matrix, 
+        //     current_batch_size, 
+        //     Channel, 
+        //     Height, 
+        //     Width, 
+        //     K
+        // );
 
-        
+        // Launch the unrolling kernel
+        matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll, 0, stream2>>>(
+            device_input_batch, unrolled_matrix, current_batch_size, Channel, Height, Width, K);
+
         cudaError_t error = cudaGetLastError();
         if(error != cudaSuccess)
         {
@@ -282,13 +312,18 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         //                                             numCRows, numCColumns);
 
         // Asynchronously call the matrix multiplication kernel on the current stream
-        matrixMultiplyShared<<<dimGrid, dimBlock, 0, stream>>>(
+        // matrixMultiplyShared<<<dimGrid, dimBlock, 0, stream>>>(
+        //     device_mask, unrolled_matrix, matmul_output,
+        //     numARows, numAColumns,
+        //     numBRows, numBColumns,
+        //     numCRows, numCColumns
+        // );
+
+        // Launch the matrix multiplication kernel
+        matrixMultiplyShared<<<dimGrid, dimBlock, 0, stream2>>>(
             device_mask, unrolled_matrix, matmul_output,
-            numARows, numAColumns,
-            numBRows, numBColumns,
-            numCRows, numCColumns
-        );
-        
+            numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns);
+
         error = cudaGetLastError();
         if(error != cudaSuccess)
         {
@@ -311,13 +346,16 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         // );
 
         // Asynchronously call the permutation kernel on the current stream
-        matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE, 0, stream>>>(
-            matmul_output, 
-            device_output + batch_idx * MAX_BATCH_SIZE * Map_out * out_image_size, // Offset output pointer
-            Map_out, 
-            current_batch_size, 
-            out_image_size
-        );
+        // matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE, 0, stream>>>(
+        //     matmul_output, 
+        //     device_output + batch_idx * MAX_BATCH_SIZE * Map_out * out_image_size, // Offset output pointer
+        //     Map_out, 
+        //     current_batch_size, 
+        //     out_image_size
+        // );
+
+        matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE, 0, stream2>>>(
+            matmul_output, device_output_batch, Map_out, current_batch_size, out_image_size);
 
         // Check for errors after permutation
         error = cudaGetLastError();
@@ -326,13 +364,25 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             std::cout<<"CUDA error (permute kernel): "<<cudaGetErrorString(error)<<std::endl;
             exit(-1);
         }
+
+        // Asynchronously copy output data back to host
+        cudaMemcpyAsync(global_host_output + batch_idx * MAX_BATCH_SIZE * Map_out * out_image_size,
+                        device_output_batch, output_batch_size, cudaMemcpyDeviceToHost, stream2);
+
+        // Free device memory of current batch
+        cudaFreeAsync(device_input_batch, stream2);
+        cudaFreeAsync(device_output_batch, stream2);
     }
 
-    // Synchronize all streams to ensure all operations are complete
-    for(int i = 0; i < NUM_STREAMS; ++i){
-        cudaStreamSynchronize(streams[i]);
-    }
+    // Synchronize streams before cleanup
+    cudaStreamSynchronize(stream1);
+    cudaStreamSynchronize(stream2);
 
+    // Destroy streams
+    cudaStreamDestroy(stream1);
+    cudaStreamDestroy(stream2);
+
+    // Free allocated memory
     cudaFree(matmul_output);
     cudaFree(unrolled_matrix);
 }
@@ -341,33 +391,41 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
 __host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *device_output, float *device_input, float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
     // TODO: Copy the output back to host
-    const int Height_out = Height - K + 1;
-    const int Width_out = Width - K + 1;
-    size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
-    //cudaMemcpy(host_output, device_output, output_size, cudaMemcpyDeviceToHost);
+    // const int Height_out = Height - K + 1;
+    // const int Width_out = Width - K + 1;
+    // size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
+    // //cudaMemcpy(host_output, device_output, output_size, cudaMemcpyDeviceToHost);
     
-    // Asynchronously copy output from device to host using stream 0
-    cudaMemcpyAsync(host_output, device_output, output_size, cudaMemcpyDeviceToHost, streams[0]);
+    // // Asynchronously copy output from device to host using stream 0
+    // cudaMemcpyAsync(host_output, device_output, output_size, cudaMemcpyDeviceToHost, streams[0]);
 
-    // Synchronize all streams to ensure copy is complete
-    for(int i = 0; i < NUM_STREAMS; ++i){
-        cudaStreamSynchronize(streams[i]);
-    }
+    // // Synchronize all streams to ensure copy is complete
+    // for(int i = 0; i < NUM_STREAMS; ++i){
+    //     cudaStreamSynchronize(streams[i]);
+    // }
 
-    // TODO: Free device memory
-    cudaFree(device_output);
-    cudaFree(device_input);
+    // // TODO: Free device memory
+    // cudaFree(device_output);
+    // cudaFree(device_input);
+    // cudaFree(device_mask);
+
+    // // Free pinned host memory
+    // cudaFreeHost(host_input_pinned);
+    // cudaFreeHost(host_mask_pinned);
+    // cudaFreeHost(host_output_pinned);
+
+    // // Destroy CUDA Streams
+    // for(int i = 0; i < NUM_STREAMS; ++i){
+    //     cudaStreamDestroy(streams[i]);
+    // }
+
+    // Free device memory for mask (input and output are freed in conv_forward_gpu)
     cudaFree(device_mask);
 
-    // Free pinned host memory
-    cudaFreeHost(host_input_pinned);
-    cudaFreeHost(host_mask_pinned);
-    cudaFreeHost(host_output_pinned);
-
-    // Destroy CUDA Streams
-    for(int i = 0; i < NUM_STREAMS; ++i){
-        cudaStreamDestroy(streams[i]);
-    }
+    // Reset global pointers
+    global_host_input = nullptr;
+    global_host_output = nullptr;
+    global_host_mask = nullptr;
 
     cudaError_t error = cudaGetLastError();
     if(error != cudaSuccess)
