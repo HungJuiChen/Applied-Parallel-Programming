@@ -161,7 +161,7 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
     // Allocate device memory for input
     size_t input_size = Batch * Channel * Height * Width * sizeof(float);
     cudaMalloc((void**)&g_device_input, input_size);
-    cudaMemcpy(g_device_input_ptr, host_input, input_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(g_device_input, host_input, input_size, cudaMemcpyHostToDevice);
 
     // Allocate device memory for output
     const int Height_out = Height - K + 1;
