@@ -9,7 +9,7 @@
 
 // Global variables to store host pointers
 const float *global_host_input;
-const float *global_host_output;
+float *global_host_output;
 const float *global_host_mask;
 
 __global__ void matrix_unrolling_kernel(const float *input, float *output,
@@ -130,7 +130,7 @@ __global__ void matrix_permute_kernel(const float *input, float *output, int Map
     }
 }
 
-__host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, const float *host_input, const float *host_mask, float **device_output_ptr, float **device_input_ptr, float **device_mask_ptr, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
+__host__ void GPUInterface::conv_forward_gpu_prolog(float *host_output, const float *host_input, const float *host_mask, float **device_output_ptr, float **device_input_ptr, float **device_mask_ptr, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
     // TODO: Allocate memory and copy over the relevant data structures to the GPU
 
@@ -177,7 +177,7 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 
     // Store host pointers in global variables
     global_host_input = host_input;
-    global_host_output = host_output;
+    global_host_output = host_output;  // Now non-const
     global_host_mask = host_mask;
 
     // Allocate device memory for mask (since it doesn't change, we can do this once)
@@ -185,10 +185,20 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
     cudaMalloc((void**) device_mask_ptr, mask_size);
     cudaMemcpy(*device_mask_ptr, host_mask, mask_size, cudaMemcpyHostToDevice);
 
+    // Allocate device memory for input
+    size_t input_size = Batch * Channel * Height * Width * sizeof(float);
+    cudaMalloc((void**) device_input_ptr, input_size);
+    cudaMemcpy(*device_input_ptr, host_input, input_size, cudaMemcpyHostToDevice);
+
+    // Allocate device memory for output
+    const int Height_out = Height - K + 1;
+    const int Width_out = Width - K + 1;
+    size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
+    cudaMalloc((void**) device_output_ptr, output_size);
+
     // Check for errors
     cudaError_t error = cudaGetLastError();
-    if(error != cudaSuccess)
-    {
+    if(error != cudaSuccess) {
         std::cout<<"CUDA error (prolog): "<<cudaGetErrorString(error)<<std::endl;
         exit(-1);
     }
