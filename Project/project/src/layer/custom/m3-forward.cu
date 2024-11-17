@@ -12,7 +12,7 @@
 // Global variables to store host pointers
 static const float *g_host_input = nullptr;
 static const float *g_host_mask = nullptr;
-static float *g_host_output = nullptr;
+static const float *g_host_output = nullptr;
 
 // Device pointers
 static float *g_device_input = nullptr;
