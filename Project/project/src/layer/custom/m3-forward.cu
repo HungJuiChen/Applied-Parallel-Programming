@@ -10,6 +10,45 @@ static const float *g_host_input = nullptr;
 static float *g_host_output = nullptr;
 static const float *g_host_mask = nullptr;
 
+// Fused convolution kernel
+__global__ void conv_forward_kernel(const float * __restrict__ input, const float * __restrict__ mask, float *output,
+                                    const int Batch, const int Map_out, const int Channel,
+                                    const int Height, const int Width, const int K)
+{
+    // Shared memory for input tile and mask
+    extern __shared__ float shared_data[];
+
+    // Calculate output dimensions
+    const int Height_out = Height - K + 1;
+    const int Width_out = Width - K + 1;
+
+    // Compute thread indices
+    int b = blockIdx.z; // Batch index
+    int m = blockIdx.y; // Output feature map (Map_out)
+    int h_out = blockIdx.x / (Width_out / TILE_WIDTH) * TILE_WIDTH + threadIdx.y; // Output height
+    int w_out = (blockIdx.x % (Width_out / TILE_WIDTH)) * TILE_WIDTH + threadIdx.x; // Output width
+
+    if (h_out < Height_out && w_out < Width_out) {
+        float acc = 0.0f;
+
+        // For each channel
+        for (int c = 0; c < Channel; ++c) {
+            // For each element in the KxK kernel
+            for (int p = 0; p < K; ++p) {
+                for (int q = 0; q < K; ++q) {
+                    int h_in = h_out + p;
+                    int w_in = w_out + q;
+                    float input_value = input[((b * Channel + c) * Height + h_in) * Width + w_in];
+                    float mask_value = mask[((m * Channel + c) * K + p) * K + q];
+                    acc += input_value * mask_value;
+                }
+            }
+        }
+
+        // Write the output
+        output[((b * Map_out + m) * Height_out + h_out) * Width_out + w_out] = acc;
+    }
+}
 
 __global__ void matrix_unrolling_kernel(const float *input, float *output,
                                         const int Batch, const int Channel,
@@ -144,18 +183,21 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
     //     exit(-1);
     // }
 
-    // Make host pointers accessible globally
-    g_host_input = host_input;
-    g_host_output = const_cast<float*>(host_output);
-    g_host_mask = host_mask;
+    // Allocate device memory for input
+    size_t input_size = Batch * Channel * Height * Width * sizeof(float);
+    cudaMalloc((void**) device_input_ptr, input_size);
+    cudaMemcpy(*device_input_ptr, host_input, input_size, cudaMemcpyHostToDevice);
+
+    // Allocate device memory for output
+    const int Height_out = Height - K + 1;
+    const int Width_out = Width - K + 1;
+    size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
+    cudaMalloc((void**) device_output_ptr, output_size);
 
     // Allocate device memory for mask
     size_t mask_size = Map_out * Channel * K * K * sizeof(float);
     cudaMalloc((void**) device_mask_ptr, mask_size);
     cudaMemcpy(*device_mask_ptr, host_mask, mask_size, cudaMemcpyHostToDevice);
-
-    // Note: We will allocate device memory for input and output in the main function
-    // since we are processing the input in chunks.
 
     // Check for errors
     cudaError_t error = cudaGetLastError();
@@ -164,138 +206,54 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
         std::cout<<"CUDA error (prolog): "<<cudaGetErrorString(error)<<std::endl;
         exit(-1);
     }
-
 }
 
 
 __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *device_input, const float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
-    const int num_streams = 4; // Adjust based on your GPU capabilities
-    cudaStream_t streams[num_streams];
-
-    // Create CUDA streams
-    for (int i = 0; i < num_streams; ++i) {
-        cudaStreamCreate(&streams[i]);
-    }
-
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-    const int image_size = Height_out * Width_out;
-    const int input_image_size = Height * Width;
-    const int mask_size = Channel * K * K;
 
-    // Calculate chunk size
-    int chunk_size = (Batch + num_streams - 1) / num_streams;
+    // Define block and grid dimensions
+    dim3 blockDim(TILE_WIDTH, TILE_WIDTH);
+    dim3 gridDim((Width_out + TILE_WIDTH - 1) / TILE_WIDTH * (Height_out + TILE_WIDTH - 1) / TILE_WIDTH, Map_out, Batch);
 
-    // Allocate device memory for unrolled matrix and matmul output (maximum required size)
-    size_t max_unroll_size = mask_size * chunk_size * image_size * sizeof(float);
-    size_t max_matmul_size = Map_out * chunk_size * image_size * sizeof(float);
+    // Calculate shared memory size (if needed)
+    size_t shared_mem_size = 0; // Adjust if you decide to use shared memory
 
-    float *device_unrolled_matrix;
-    float *device_matmul_output;
+    // Launch the fused convolution kernel
+    conv_forward_kernel<<<gridDim, blockDim, shared_mem_size>>>(
+        device_input,
+        device_mask,
+        device_output,
+        Batch, Map_out, Channel,
+        Height, Width, K
+    );
 
-    cudaMalloc((void**)&device_unrolled_matrix, max_unroll_size);
-    cudaMalloc((void**)&device_matmul_output, max_matmul_size);
-
-    for (int i = 0; i < num_streams; ++i) {
-        int offset = i * chunk_size;
-        int current_batch_size = min(chunk_size, Batch - offset);
-
-        if (current_batch_size <= 0) break;
-
-        // Allocate device memory for input and output chunks
-        size_t input_chunk_size = current_batch_size * Channel * Height * Width * sizeof(float);
-        size_t output_chunk_size = current_batch_size * Map_out * image_size * sizeof(float);
-
-        float *device_input_chunk;
-        float *device_output_chunk;
-
-        cudaMalloc((void**)&device_input_chunk, input_chunk_size);
-        cudaMalloc((void**)&device_output_chunk, output_chunk_size);
-
-        // Asynchronously copy input data to device
-        cudaMemcpyAsync(device_input_chunk, g_host_input + offset * Channel * Height * Width,
-                        input_chunk_size, cudaMemcpyHostToDevice, streams[i]);
-
-        // Unroll input matrix
-        int H_unroll = mask_size;
-        int W_unroll = current_batch_size * image_size;
-
-        dim3 blockDim_unroll(16, 16);
-        dim3 gridDim_unroll((W_unroll + blockDim_unroll.x - 1) / blockDim_unroll.x,
-                            (H_unroll + blockDim_unroll.y - 1) / blockDim_unroll.y);
-
-        matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll, 0, streams[i]>>>(
-            device_input_chunk,
-            device_unrolled_matrix,
-            current_batch_size,
-            Channel,
-            Height,
-            Width,
-            K
-        );
-
-        // Matrix multiplication
-        int numARows = Map_out;
-        int numAColumns = mask_size;
-        int numBRows = mask_size;
-        int numBColumns = current_batch_size * image_size;
-        int numCRows = Map_out;
-        int numCColumns = current_batch_size * image_size;
-
-        dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
-        dim3 dimGrid((numCColumns + TILE_WIDTH - 1) / TILE_WIDTH,
-                     (numCRows + TILE_WIDTH - 1) / TILE_WIDTH);
-
-        matrixMultiplyShared<<<dimGrid, dimBlock, 0, streams[i]>>>(
-            device_mask,
-            device_unrolled_matrix,
-            device_matmul_output,
-            numARows, numAColumns,
-            numBRows, numBColumns,
-            numCRows, numCColumns
-        );
-
-        // Permute the result
-        dim3 permute_grid_dim((image_size + BLOCK_SIZE - 1) / BLOCK_SIZE, current_batch_size);
-
-        matrix_permute_kernel<<<permute_grid_dim, BLOCK_SIZE, 0, streams[i]>>>(
-            device_matmul_output,
-            device_output_chunk,
-            Map_out,
-            current_batch_size,
-            image_size
-        );
-
-        // Asynchronously copy output data back to host
-        cudaMemcpyAsync(g_host_output + offset * Map_out * image_size, device_output_chunk,
-                        output_chunk_size, cudaMemcpyDeviceToHost, streams[i]);
-
-        // Free device memory for input and output chunks
-        cudaFree(device_input_chunk);
-        cudaFree(device_output_chunk);
+    // Check for errors
+    cudaError_t error = cudaGetLastError();
+    if(error != cudaSuccess)
+    {
+        std::cout<<"CUDA error (conv_forward_kernel): "<<cudaGetErrorString(error)<<std::endl;
+        exit(-1);
     }
-
-    // Synchronize streams and destroy them
-    for (int i = 0; i < num_streams; ++i) {
-        cudaStreamSynchronize(streams[i]);
-        cudaStreamDestroy(streams[i]);
-    }
-
-    // Free device memory
-    cudaFree(device_unrolled_matrix);
-    cudaFree(device_matmul_output);
 }
 
 
 __host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *device_output, float *device_input, float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
-    // Free device memory for mask
+    // Copy the output back to host
+    const int Height_out = Height - K + 1;
+    const int Width_out = Width - K + 1;
+    size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
+    cudaMemcpy(host_output, device_output, output_size, cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(device_input);
+    cudaFree(device_output);
     cudaFree(device_mask);
 
-    // Note: Input and output data have been copied asynchronously during computation
-    // and device memory for input and output chunks has been freed in the main function.
-
+    // Check for errors
     cudaError_t error = cudaGetLastError();
     if(error != cudaSuccess)
     {
