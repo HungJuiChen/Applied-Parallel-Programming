@@ -6,10 +6,6 @@
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
 
-static const float *g_host_input = nullptr;
-static float *g_host_output = nullptr;
-static const float *g_host_mask = nullptr;
-
 // Fused convolution kernel
 __global__ void conv_forward_kernel(const float * __restrict__ input, const float * __restrict__ mask, float *output,
                                     const int Batch, const int Map_out, const int Channel,
