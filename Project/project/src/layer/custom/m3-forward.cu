@@ -14,6 +14,9 @@ using namespace nvcuda;
 __global__ void tensor_conv_kernel(const float *input, const float *mask, float *output,
                                    const int Batch, const int Map_out, const int Channel,
                                    const int Height, const int Width, const int K) {
+    
+    extern __shared__ char shared_memory[];
+    
     // Constants for the convolution
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
@@ -56,7 +59,8 @@ __global__ void tensor_conv_kernel(const float *input, const float *mask, float 
         int b_col = warpN * N;
         if (b_row < Channel * K * K && b_col < Batch * Height_out * Width_out) {
             // Compute unrolled input indices on-the-fly
-            half* shared_B = reinterpret_cast<half*>(__shared__ + threadIdx.y * blockDim.x + threadIdx.x);
+            //half* shared_B = reinterpret_cast<half*>(__shared__ + threadIdx.y * blockDim.x + threadIdx.x);
+            half* shared_B = reinterpret_cast<half*>(shared_memory + (threadIdx.y * blockDim.x + threadIdx.x) * sizeof(half));
             int c = (b_row) / (K * K);
             int p = ((b_row) % (K * K)) / K;
             int q = ((b_row) % (K * K)) % K;
