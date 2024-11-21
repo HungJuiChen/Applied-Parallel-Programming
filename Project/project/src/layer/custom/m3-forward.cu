@@ -1,5 +1,7 @@
 #include <cmath>
 #include <iostream>
+#include <cuda.h>
+#include <mma.h>
 #include "gpu-new-forward.h"
 
 #define TILE_WIDTH 16
