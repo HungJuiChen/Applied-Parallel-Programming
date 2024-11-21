@@ -19,76 +19,97 @@ __global__ void tensor_conv_kernel(const float *input, const float *mask, float 
     const int Width_out = Width - K + 1;
 
     // WMMA tile dimensions
-    const int M = 16;  // Rows of output tile
-    const int N = 16;  // Columns of output tile
-    const int K_TILE = 16;  // Shared dimension
+    const int M = 16;  // Output tile height (rows of the output matrix)
+    const int N = 16;  // Output tile width (columns of the output matrix)
+    const int K_TILE = 16;  // Inner dimension for matrix multiplication
+
+    // Declare shared memory for input and mask tiles
+    extern __shared__ half shared_mem[];  // Dynamic shared memory
+    // Split shared memory between input tile and mask tile
+    half* shared_A = shared_mem;  // Mask tile (size: M x K_TILE)
+    half* shared_B = shared_mem + M * K_TILE;  // Input tile (size: K_TILE x N)
 
     // Calculate indices
-    int tile_row = blockIdx.y;
-    int tile_col = blockIdx.x;
+    int block_row = blockIdx.y;
+    int block_col = blockIdx.x;
 
-    // Each warp handles one output tile
-    int warpM = (tile_row * blockDim.y + threadIdx.y) / warpSize;
-    int warpN = (tile_col * blockDim.x + threadIdx.x) / warpSize;
+    // Each thread block computes one output tile (M x N)
+    // Thread indices within the block
+    int thread_row = threadIdx.y;
+    int thread_col = threadIdx.x;
+
+    // Global row and column indices of the output matrix
+    int row = block_row * M + thread_row;
+    int col = block_col * N + thread_col;
 
     // Initialize accumulator fragment
     wmma::fragment<wmma::accumulator, M, N, K_TILE, float> acc;
     wmma::fill_fragment(acc, 0.0f);
 
-    // Loop over K dimension
+    // Loop over the K dimension
     for (int k = 0; k < Channel * K * K; k += K_TILE) {
-        // Declare fragments
+        // Load mask tile into shared memory
+        if (thread_row < M && thread_col < K_TILE) {
+            int a_row = row;
+            int a_col = k + thread_col;
+            if (a_row < Map_out && a_col < Channel * K * K) {
+                shared_A[thread_row * K_TILE + thread_col] =
+                    __float2half(mask[a_row * Channel * K * K + a_col]);
+            } else {
+                shared_A[thread_row * K_TILE + thread_col] = __float2half(0.0f);
+            }
+        }
+
+        // Load input tile into shared memory
+        if (thread_row < K_TILE && thread_col < N) {
+            int b_row = k + thread_row;
+            int b_col = col;
+            if (b_row < Channel * K * K && b_col < Batch * Height_out * Width_out) {
+                // Compute unrolled input indices on-the-fly
+                int c = b_row / (K * K);
+                int p = (b_row % (K * K)) / K;
+                int q = (b_row % (K * K)) % K;
+
+                int b = b_col / (Height_out * Width_out);
+                int h = (b_col % (Height_out * Width_out)) / Width_out;
+                int w = (b_col % (Height_out * Width_out)) % Width_out;
+
+                int input_h = h + p;
+                int input_w = w + q;
+
+                if (b < Batch && c < Channel && input_h < Height && input_w < Width) {
+                    float val = input[b * (Channel * Height * Width) +
+                                      c * (Height * Width) +
+                                      input_h * Width +
+                                      input_w];
+                    shared_B[thread_row * N + thread_col] = __float2half(val);
+                } else {
+                    shared_B[thread_row * N + thread_col] = __float2half(0.0f);
+                }
+            } else {
+                shared_B[thread_row * N + thread_col] = __float2half(0.0f);
+            }
+        }
+
+        __syncthreads();
+
+        // Declare WMMA fragments
         wmma::fragment<wmma::matrix_a, M, K_TILE, K_TILE, half, wmma::row_major> a_frag;
         wmma::fragment<wmma::matrix_b, K_TILE, N, K_TILE, half, wmma::col_major> b_frag;
 
-        // Load mask fragment
-        int a_row = warpM * M;
-        int a_col = k;
-        if (a_row < Map_out && a_col < Channel * K * K) {
-            const half* a_ptr = reinterpret_cast<const half*>(mask + a_row * Channel * K * K + a_col);
-            wmma::load_matrix_sync(a_frag, a_ptr, Channel * K * K);
-        } else {
-            wmma::fill_fragment(a_frag, __float2half(0.0f));
-        }
+        // Load the shared memory tiles into WMMA fragments
+        wmma::load_matrix_sync(a_frag, shared_A, K_TILE);
+        wmma::load_matrix_sync(b_frag, shared_B, N);
 
-        // Load input fragment
-        int b_row = k;
-        int b_col = warpN * N;
-        if (b_row < Channel * K * K && b_col < Batch * Height_out * Width_out) {
-            // Compute unrolled input indices on-the-fly
-            half* shared_B = reinterpret_cast<half*>(__shared__ + threadIdx.y * blockDim.x + threadIdx.x);
-            int c = (b_row) / (K * K);
-            int p = ((b_row) % (K * K)) / K;
-            int q = ((b_row) % (K * K)) % K;
-
-            int b = b_col / (Height_out * Width_out);
-            int h = (b_col % (Height_out * Width_out)) / Width_out;
-            int w = (b_col % (Height_out * Width_out)) % Width_out;
-
-            int input_h = h + p;
-            int input_w = w + q;
-
-            if (b < Batch && c < Channel && input_h < Height && input_w < Width) {
-                float val = input[b * (Channel * Height * Width) + c * (Height * Width) + input_h * Width + input_w];
-                shared_B[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(val);
-            } else {
-                shared_B[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(0.0f);
-            }
-
-            wmma::load_matrix_sync(b_frag, shared_B, Batch * Height_out * Width_out);
-        } else {
-            wmma::fill_fragment(b_frag, __float2half(0.0f));
-        }
-
-        // Perform matrix multiplication
+        // Perform the matrix multiplication
         wmma::mma_sync(acc, a_frag, b_frag, acc);
+
+        __syncthreads();  // Ensure all threads have finished using shared memory
     }
 
     // Store the accumulator fragment to global memory
-    int c_row = warpM * M;
-    int c_col = warpN * N;
-    if (c_row < Map_out && c_col < Batch * Height_out * Width_out) {
-        float* c_ptr = output + c_row * Batch * Height_out * Width_out + c_col;
+    if (row < Map_out && col < Batch * Height_out * Width_out) {
+        float* c_ptr = output + row * Batch * Height_out * Width_out + col;
         wmma::store_matrix_sync(c_ptr, acc, Batch * Height_out * Width_out, wmma::mem_row_major);
     }
 }
@@ -266,8 +287,11 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     dim3 dimGrid((Batch * Height_out * Width_out + N - 1) / N,
                  (Map_out + M - 1) / M);
 
+    // Calculate shared memory size
+    size_t shared_mem_size = (M * K_TILE + K_TILE * N) * sizeof(half);
+
     // Launch the kernel
-    tensor_conv_kernel<<<dimGrid, dimBlock>>>(
+    tensor_conv_kernel<<<gridDim, blockDim, shared_mem_size>>>(
         device_input,
         device_mask,
         device_output,
