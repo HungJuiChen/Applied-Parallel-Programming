@@ -283,8 +283,8 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     const int K_TILE = 16;
 
     // Determine grid and block dimensions
-    dim3 dimBlock(32, 8);  // 256 threads per block
-    dim3 dimGrid((Batch * Height_out * Width_out + N - 1) / N,
+    dim3 blockDim(N, M);
+    dim3 gridDim((Batch * Height_out * Width_out + N - 1) / N,
                  (Map_out + M - 1) / M);
 
     // Calculate shared memory size
