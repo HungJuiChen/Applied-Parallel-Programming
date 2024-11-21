@@ -6,88 +6,90 @@
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
 
-__global__ void fused_conv_kernel(const float *input, const float *mask, float *output,
-                                  const int Batch, const int Map_out, const int Channel,
-                                  const int Height, const int Width, const int K) {
+// Use the nvcuda::wmma namespace
+using namespace nvcuda;
+
+__global__ void tensor_conv_kernel(const float *input, const float *mask, float *output,
+                                   const int Batch, const int Map_out, const int Channel,
+                                   const int Height, const int Width, const int K) {
+    // Constants for the convolution
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-    const int H_unroll = Channel * K * K;
-    const int W_unroll = Batch * Height_out * Width_out;
 
-    // Shared memory for mask and input tiles
-    __shared__ float tileA[TILE_WIDTH][TILE_WIDTH];
-    __shared__ float tileB[TILE_WIDTH][TILE_WIDTH];
+    // WMMA tile dimensions
+    const int M = 16;  // Rows of output tile
+    const int N = 16;  // Columns of output tile
+    const int K_TILE = 16;  // Shared dimension
 
-    int by = blockIdx.y;  // Output feature map index (Map_out dimension)
-    int bx = blockIdx.x;  // Column index in the unrolled input matrix
-    int ty = threadIdx.y;
-    int tx = threadIdx.x;
+    // Calculate indices
+    int tile_row = blockIdx.y;
+    int tile_col = blockIdx.x;
 
-    int row = by * TILE_WIDTH + ty;  // Index in mask (filter weights)
-    int col = bx * TILE_WIDTH + tx;  // Index in unrolled input
+    // Each warp handles one output tile
+    int warpM = (tile_row * blockDim.y + threadIdx.y) / warpSize;
+    int warpN = (tile_col * blockDim.x + threadIdx.x) / warpSize;
 
-    float val = 0.0f;
+    // Initialize accumulator fragment
+    wmma::fragment<wmma::accumulator, M, N, K_TILE, float> acc;
+    wmma::fill_fragment(acc, 0.0f);
 
-    // Loop over tiles of the unrolled input
-    for (int m = 0; m < (H_unroll - 1) / TILE_WIDTH + 1; ++m) {
-        // Load mask tile into shared memory
-        if (row < Map_out && m * TILE_WIDTH + tx < H_unroll) {
-            tileA[ty][tx] = mask[row * H_unroll + m * TILE_WIDTH + tx];
+    // Loop over K dimension
+    for (int k = 0; k < Channel * K * K; k += K_TILE) {
+        // Declare fragments
+        wmma::fragment<wmma::matrix_a, M, K_TILE, K_TILE, half, wmma::row_major> a_frag;
+        wmma::fragment<wmma::matrix_b, K_TILE, N, K_TILE, half, wmma::col_major> b_frag;
+
+        // Load mask fragment
+        int a_row = warpM * M;
+        int a_col = k;
+        if (a_row < Map_out && a_col < Channel * K * K) {
+            const half* a_ptr = reinterpret_cast<const half*>(mask + a_row * Channel * K * K + a_col);
+            wmma::load_matrix_sync(a_frag, a_ptr, Channel * K * K);
         } else {
-            tileA[ty][tx] = 0.0f;
+            wmma::fill_fragment(a_frag, __float2half(0.0f));
         }
 
-        // Compute indices for the input
-        int h_unroll = m * TILE_WIDTH + ty;
-        int w_unroll = col;
+        // Load input fragment
+        int b_row = k;
+        int b_col = warpN * N;
+        if (b_row < Channel * K * K && b_col < Batch * Height_out * Width_out) {
+            // Compute unrolled input indices on-the-fly
+            half* shared_B = reinterpret_cast<half*>(__shared__ + threadIdx.y * blockDim.x + threadIdx.x);
+            int c = (b_row) / (K * K);
+            int p = ((b_row) % (K * K)) / K;
+            int q = ((b_row) % (K * K)) % K;
 
-        if (h_unroll < H_unroll && w_unroll < W_unroll) {
-            int c = h_unroll / (K * K);
-            int p = (h_unroll % (K * K)) / K;
-            int q = (h_unroll % (K * K)) % K;
+            int b = b_col / (Height_out * Width_out);
+            int h = (b_col % (Height_out * Width_out)) / Width_out;
+            int w = (b_col % (Height_out * Width_out)) % Width_out;
 
-            int b = w_unroll / (Height_out * Width_out);
-            int remainder = w_unroll % (Height_out * Width_out);
-            int h = remainder / Width_out;
-            int w = remainder % Width_out;
+            int input_h = h + p;
+            int input_w = w + q;
 
-            int input_row = h + p;
-            int input_col = w + q;
-
-            if (b < Batch && c < Channel && input_row < Height && input_col < Width) {
-                tileB[ty][tx] = input[b * (Channel * Height * Width) + c * (Height * Width) + input_row * Width + input_col];
+            if (b < Batch && c < Channel && input_h < Height && input_w < Width) {
+                float val = input[b * (Channel * Height * Width) + c * (Height * Width) + input_h * Width + input_w];
+                shared_B[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(val);
             } else {
-                tileB[ty][tx] = 0.0f;
+                shared_B[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(0.0f);
             }
+
+            wmma::load_matrix_sync(b_frag, shared_B, Batch * Height_out * Width_out);
         } else {
-            tileB[ty][tx] = 0.0f;
+            wmma::fill_fragment(b_frag, __float2half(0.0f));
         }
 
-        __syncthreads();
-
-        // Perform the multiplication and accumulation
-        if (row < Map_out && col < W_unroll) {
-            for (int k = 0; k < TILE_WIDTH; ++k) {
-                val += tileA[ty][k] * tileB[k][tx];
-            }
-        }
-
-        __syncthreads();
+        // Perform matrix multiplication
+        wmma::mma_sync(acc, a_frag, b_frag, acc);
     }
 
-    // Write the output directly to the correct position
-    if (row < Map_out && col < W_unroll) {
-        int b = col / (Height_out * Width_out);
-        int remainder = col % (Height_out * Width_out);
-        int h = remainder / Width_out;
-        int w = remainder % Width_out;
-
-        if (b < Batch && h < Height_out && w < Width_out) {
-            output[b * (Map_out * Height_out * Width_out) + row * (Height_out * Width_out) + h * Width_out + w] = val;
-        }
+    // Store the accumulator fragment to global memory
+    int c_row = warpM * M;
+    int c_col = warpN * N;
+    if (c_row < Map_out && c_col < Batch * Height_out * Width_out) {
+        float* c_ptr = output + c_row * Batch * Height_out * Width_out + c_col;
+        wmma::store_matrix_sync(c_ptr, acc, Batch * Height_out * Width_out, wmma::mem_row_major);
     }
 }
-
 
 __global__ void matrix_unrolling_kernel(const float *input, float *output,
                                         const int Batch, const int Channel,
@@ -107,7 +109,7 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     */
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-
+    
     const int H_unroll = Channel * K * K;
     const int W_unroll = Batch * Height_out * Width_out;
 
@@ -209,6 +211,17 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 {
     // TODO: Allocate memory and copy over the relevant data structures to the GPU
 
+    // We pass double pointers for you to initialize the relevant device pointers,
+    //  which are passed to the other two functions.
+
+    // Useful snippet for error checking
+    // cudaError_t error = cudaGetLastError();
+    // if(error != cudaSuccess)
+    // {
+    //     std::cout<<"CUDA error: "<<cudaGetErrorString(error)<<std::endl;
+    //     exit(-1);
+    // }
+
     // Allocate device memory for input
     size_t input_size = Batch * Channel * Height * Width * sizeof(float);
     cudaMalloc((void**) device_input_ptr, input_size);
@@ -240,41 +253,35 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
 {
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-    const int H_unroll = Channel * K * K;
 
-    // Determine the number of mini-batches
-    int num_batches = (Batch + MAX_BATCH_SIZE - 1) / MAX_BATCH_SIZE;
+    // WMMA tile dimensions
+    const int M = 16;
+    const int N = 16;
+    const int K_TILE = 16;
 
-    // Iterate over each mini-batch
-    for(int batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
-        // Calculate the current mini-batch size
-        int current_batch_size = (batch_idx == num_batches - 1) ? (Batch - batch_idx * MAX_BATCH_SIZE) : MAX_BATCH_SIZE;
-        int current_W_unroll = current_batch_size * Height_out * Width_out;
+    // Determine grid and block dimensions
+    dim3 dimBlock(32, 8);  // 256 threads per block
+    dim3 dimGrid((Batch * Height_out * Width_out + N - 1) / N,
+                 (Map_out + M - 1) / M);
 
-        // Set grid and block dimensions
-        dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
-        dim3 dimGrid((current_W_unroll + TILE_WIDTH - 1) / TILE_WIDTH,
-                     (Map_out + TILE_WIDTH - 1) / TILE_WIDTH);
+    // Launch the kernel
+    tensor_conv_kernel<<<dimGrid, dimBlock>>>(
+        device_input,
+        device_mask,
+        device_output,
+        Batch,
+        Map_out,
+        Channel,
+        Height,
+        Width,
+        K
+    );
 
-        // Launch the fused kernel
-        fused_conv_kernel<<<dimGrid, dimBlock>>>(
-            device_input + batch_idx * MAX_BATCH_SIZE * Channel * Height * Width,
-            device_mask,
-            device_output + batch_idx * MAX_BATCH_SIZE * Map_out * Height_out * Width_out,
-            current_batch_size,
-            Map_out,
-            Channel,
-            Height,
-            Width,
-            K
-        );
-
-        // Error checking
-        cudaError_t error = cudaGetLastError();
-        if(error != cudaSuccess) {
-            std::cout << "CUDA error (fused kernel): " << cudaGetErrorString(error) << std::endl;
-            exit(-1);
-        }
+    // Error checking
+    cudaError_t error = cudaGetLastError();
+    if(error != cudaSuccess) {
+        std::cout << "CUDA error (tensor kernel): " << cudaGetErrorString(error) << std::endl;
+        exit(-1);
     }
 }
 
