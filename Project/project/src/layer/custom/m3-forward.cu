@@ -263,7 +263,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     // WMMA tile dimensions
     const int M = 16;
     const int N = 16;
-    const int K_TILE = 16;
+    //const int K_TILE = 16;
 
     // Determine grid and block dimensions
     dim3 dimBlock(32, 8);  // 256 threads per block
