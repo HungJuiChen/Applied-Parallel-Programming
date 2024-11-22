@@ -3,6 +3,7 @@
 #include "gpu-new-forward.h"
 
 #define TILE_WIDTH 16
+#define REG_TILE_SIZE 4  // Number of elements per thread
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
 
@@ -105,6 +106,68 @@ __global__ void matrixMultiplyShared(const float *A, const float *B, float *C,
 
     if (row < numCRows && col < numCColumns) {
         C[row * numCColumns + col] = val;
+    }
+}
+
+__global__ void matrixMultiplySharedOptimized(const float *A, const float *B, float *C,
+                                             int numARows, int numAColumns,
+                                             int numBRows, int numBColumns,
+                                             int numCRows, int numCColumns) {
+    __shared__ float tileA[TILE_WIDTH][TILE_WIDTH];
+    __shared__ float tileB[TILE_WIDTH][TILE_WIDTH];
+
+    // Calculate thread row and column within the matrix
+    int row = blockIdx.y * TILE_WIDTH + threadIdx.y;
+    int col = blockIdx.x * TILE_WIDTH + threadIdx.x;
+
+    // Register accumulation variable
+    float value = 0.0f;
+
+    // Loop over the tiles of the input matrices
+    for (int m = 0; m < (numAColumns + TILE_WIDTH - 1) / TILE_WIDTH; ++m) {
+        // Collaborative loading of tiles into shared memory
+        if (row < numARows && m * TILE_WIDTH + threadIdx.x < numAColumns) {
+            tileA[threadIdx.y][threadIdx.x] = A[row * numAColumns + m * TILE_WIDTH + threadIdx.x];
+        } else {
+            tileA[threadIdx.y][threadIdx.x] = 0.0f;
+        }
+
+        if (col < numBColumns && m * TILE_WIDTH + threadIdx.y < numBRows) {
+            tileB[threadIdx.y][threadIdx.x] = B[(m * TILE_WIDTH + threadIdx.y) * numBColumns + col];
+        } else {
+            tileB[threadIdx.y][threadIdx.x] = 0.0f;
+        }
+
+        __syncthreads();
+
+        // Register tiling: Each thread loads multiple elements into registers
+        float regA[REG_TILE_SIZE];
+        float regB[REG_TILE_SIZE];
+
+        #pragma unroll
+        for (int i = 0; i < REG_TILE_SIZE; ++i) {
+            int idx = threadIdx.x * REG_TILE_SIZE + i;
+            if (idx < TILE_WIDTH) {
+                regA[i] = tileA[threadIdx.y][idx];
+                regB[i] = tileB[idx][threadIdx.x];
+            } else {
+                regA[i] = 0.0f;
+                regB[i] = 0.0f;
+            }
+        }
+
+        // Compute partial sums using registers
+        #pragma unroll
+        for (int i = 0; i < REG_TILE_SIZE; ++i) {
+            value += regA[i] * regB[i];
+        }
+
+        __syncthreads();
+    }
+
+    // Write the result to global memory
+    if (row < numCRows && col < numCColumns) {
+        C[row * numCColumns + col] = value;
     }
 }
 
@@ -226,11 +289,15 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         int numCRows = Map_out;
         int numCColumns = current_W_unroll;
 
+        //dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
+        //dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
+
         dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
-        dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
+        dim3 dimGrid((numCColumns + TILE_WIDTH - 1) / TILE_WIDTH,
+                    (numCRows + TILE_WIDTH - 1) / TILE_WIDTH);
 
         // Call the matrix multiplication kernel
-        matrixMultiplyShared<<<dimGrid, dimBlock>>>(device_mask, unrolled_matrix, matmul_output,
+        matrixMultiplySharedOptimized<<<dimGrid, dimBlock>>>(device_mask, unrolled_matrix, matmul_output,
                                                     numARows, numAColumns,
                                                     numBRows, numBColumns,
                                                     numCRows, numCColumns);
