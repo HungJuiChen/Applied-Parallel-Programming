@@ -3,7 +3,6 @@
 #include "gpu-new-forward.h"
 
 #define TILE_WIDTH 16
-#define REG_TILE_SIZE 4  // Number of elements per thread
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
 
@@ -66,61 +65,44 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     }
 }
 
-__global__ void matrixMultiplySharedOptimized(const float *A, const float *B, float *C,
-                                             int numARows, int numAColumns,
-                                             int numBRows, int numBColumns,
-                                             int numCRows, int numCColumns) {
+// Tiled matrix multiplication kernel. Computes C = AB
+// You don't need to modify this kernel.
+__global__ void matrixMultiplyShared(const float *A, const float *B, float *C,
+                                     int numARows, int numAColumns,
+                                     int numBRows, int numBColumns,
+                                     int numCRows, int numCColumns)
+{
     __shared__ float tileA[TILE_WIDTH][TILE_WIDTH];
     __shared__ float tileB[TILE_WIDTH][TILE_WIDTH];
 
-    int row = blockIdx.y * TILE_WIDTH + threadIdx.y;
-    int col = blockIdx.x * TILE_WIDTH + threadIdx.x;
+    int by = blockIdx.y, bx = blockIdx.x, ty = threadIdx.y, tx = threadIdx.x;
 
-    float value = 0.0f;
+    int row = by * TILE_WIDTH + ty, col = bx * TILE_WIDTH + tx;
+    float val = 0;
 
-    for (int m = 0; m < (numAColumns + TILE_WIDTH - 1) / TILE_WIDTH; ++m) {
-        if (row < numARows && m * TILE_WIDTH + threadIdx.x < numAColumns) {
-            tileA[threadIdx.y][threadIdx.x] = A[row * numAColumns + m * TILE_WIDTH + threadIdx.x];
+    for (int tileId = 0; tileId < (numAColumns - 1) / TILE_WIDTH + 1; tileId++) {
+        if (row < numARows && tileId * TILE_WIDTH + tx < numAColumns) {
+            tileA[ty][tx] = A[(size_t) row * numAColumns + tileId * TILE_WIDTH + tx];
         } else {
-            tileA[threadIdx.y][threadIdx.x] = 0.0f;
+            tileA[ty][tx] = 0;
         }
-
-        if (col < numBColumns && m * TILE_WIDTH + threadIdx.y < numBRows) {
-            tileB[threadIdx.y][threadIdx.x] = B[(m * TILE_WIDTH + threadIdx.y) * numBColumns + col];
+        if (col < numBColumns && tileId * TILE_WIDTH + ty < numBRows) {
+            tileB[ty][tx] = B[((size_t) tileId * TILE_WIDTH + ty) * numBColumns + col];
         } else {
-            tileB[threadIdx.y][threadIdx.x] = 0.0f;
+            tileB[ty][tx] = 0;
         }
-
         __syncthreads();
 
-        // Loop over the tile columns in steps of REG_TILE_SIZE
-        for (int k = 0; k < TILE_WIDTH; k += REG_TILE_SIZE) {
-            float regA[REG_TILE_SIZE];
-            float regB[REG_TILE_SIZE];
-
-            #pragma unroll
-            for (int i = 0; i < REG_TILE_SIZE; ++i) {
-                int idx = k + i;
-                if (idx < TILE_WIDTH) {
-                    regA[i] = tileA[threadIdx.y][idx];
-                    regB[i] = tileB[idx][threadIdx.x];
-                } else {
-                    regA[i] = 0.0f;
-                    regB[i] = 0.0f;
-                }
-            }
-
-            #pragma unroll
-            for (int i = 0; i < REG_TILE_SIZE; ++i) {
-                value += regA[i] * regB[i];
+        if (row < numCRows && col < numCColumns) {
+            for (int i = 0; i < TILE_WIDTH; i++) {
+                val += tileA[ty][i] * tileB[i][tx];
             }
         }
-
         __syncthreads();
     }
 
     if (row < numCRows && col < numCColumns) {
-        C[row * numCColumns + col] = value;
+        C[row * numCColumns + col] = val;
     }
 }
 
@@ -231,15 +213,11 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         int numCRows = Map_out;
         int numCColumns = current_W_unroll;
 
-        //dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
-        //dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
-
         dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
-        dim3 dimGrid((numCColumns + TILE_WIDTH - 1) / TILE_WIDTH,
-                    (numCRows + TILE_WIDTH - 1) / TILE_WIDTH);
+        dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
 
         // Call the matrix multiplication kernel
-        matrixMultiplySharedOptimized<<<dimGrid, dimBlock>>>(device_mask, unrolled_matrix, matmul_output,
+        matrixMultiplyShared<<<dimGrid, dimBlock>>>(device_mask, unrolled_matrix, matmul_output,
                                                     numARows, numAColumns,
                                                     numBRows, numBColumns,
                                                     numCRows, numCColumns);
