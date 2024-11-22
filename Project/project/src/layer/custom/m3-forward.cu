@@ -289,12 +289,12 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         int numCRows = Map_out;
         int numCColumns = current_W_unroll;
 
-        //dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
-        //dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
-
         dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
-        dim3 dimGrid((numCColumns + TILE_WIDTH - 1) / TILE_WIDTH,
-                    (numCRows + TILE_WIDTH - 1) / TILE_WIDTH);
+        dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
+
+        //dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
+        //dim3 dimGrid((numCColumns + TILE_WIDTH - 1) / TILE_WIDTH,
+        //            (numCRows + TILE_WIDTH - 1) / TILE_WIDTH);
 
         // Call the matrix multiplication kernel
         matrixMultiplySharedOptimized<<<dimGrid, dimBlock>>>(device_mask, unrolled_matrix, matmul_output,
