@@ -269,8 +269,8 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 }
 
 
-// __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *device_input, const float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
-// {
+__host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *device_input, const float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
+{
 //     const int Height_out = Height - K + 1;
 //     const int Width_out = Width - K + 1;
 //     const int Height_unrolled = Channel * K * K;
@@ -368,11 +368,11 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 
 //     cudaFree(matmul_output);
 //     cudaFree(unrolled_matrix);
-// }
+}
 
 
-// __host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *device_output, float *device_input, float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
-// {
+__host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *device_output, float *device_input, float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
+{
 //     // TODO: Copy the output back to host
 //     const int Height_out = Height - K + 1;
 //     const int Width_out = Width - K + 1;
@@ -390,7 +390,7 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 //         std::cout<<"CUDA error (epilog): "<<cudaGetErrorString(error)<<std::endl;
 //         exit(-1);
 //     }
-// }
+}
 
 
 __host__ void GPUInterface::get_device_properties()
