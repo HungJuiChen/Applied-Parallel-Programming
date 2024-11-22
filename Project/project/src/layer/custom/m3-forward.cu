@@ -126,21 +126,137 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 {
     // TODO: Allocate memory and copy over the relevant data structures to the GPU
 
-    // Allocate device memory for input
-    size_t input_size = Batch * Channel * Height * Width * sizeof(float);
-    cudaMalloc((void**) device_input_ptr, input_size);
-    cudaMemcpy(*device_input_ptr, host_input, input_size, cudaMemcpyHostToDevice);
-
-    // Allocate device memory for output
-    const int Height_out = Height - K + 1;
-    const int Width_out = Width - K + 1;
-    size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
-    cudaMalloc((void**) device_output_ptr, output_size);
-
-    // Allocate device memory for mask
+    // Allocate device memory for the mask and copy it
     size_t mask_size = Map_out * Channel * K * K * sizeof(float);
     cudaMalloc((void**) device_mask_ptr, mask_size);
     cudaMemcpy(*device_mask_ptr, host_mask, mask_size, cudaMemcpyHostToDevice);
+
+    // Determine the batch slice size and number of slices
+    int batch_slice_size = MAX_BATCH_SIZE; // Adjust based on available memory
+    int num_slices = (Batch + batch_slice_size - 1) / batch_slice_size;
+
+    // Compute output dimensions
+    const int Height_out = Height - K + 1;
+    const int Width_out = Width - K + 1;
+
+    // Allocate device memory for input and output slices
+    size_t input_slice_size = batch_slice_size * Channel * Height * Width * sizeof(float);
+    size_t output_slice_size = batch_slice_size * Map_out * Height_out * Width_out * sizeof(float);
+
+    float *device_input_slices;
+    cudaMalloc((void**)&device_input_slices, input_slice_size);
+
+    float *device_output_slices;
+    cudaMalloc((void**)&device_output_slices, output_slice_size);
+
+    // Allocate device memory for unrolled matrix and matmul output
+    int H_unroll = Channel * K * K;
+    int W_unroll = batch_slice_size * Height_out * Width_out;
+    size_t unroll_size = H_unroll * W_unroll * sizeof(float);
+    float *unrolled_matrix;
+    cudaMalloc((void**)&unrolled_matrix, unroll_size);
+
+    int numCRows = Map_out;
+    int numCColumns = batch_slice_size * Height_out * Width_out;
+    size_t matmul_size = numCRows * numCColumns * sizeof(float);
+    float *matmul_output;
+    cudaMalloc((void**)&matmul_output, matmul_size);
+
+    // Create CUDA streams
+    cudaStream_t *streams = new cudaStream_t[num_slices];
+    for (int i = 0; i < num_slices; ++i) {
+        cudaStreamCreate(&streams[i]);
+    }
+
+    // Process each batch slice
+    for (int slice_idx = 0; slice_idx < num_slices; ++slice_idx) {
+        int current_batch_size = (slice_idx == num_slices - 1) ?
+            (Batch - slice_idx * batch_slice_size) : batch_slice_size;
+
+        // Compute host pointers for the current slice
+        const float *host_input_slice = host_input + slice_idx * batch_slice_size * Channel * Height * Width;
+        float *host_output_slice = const_cast<float*>(host_output) + slice_idx * batch_slice_size * Map_out * Height_out * Width_out;
+
+        // Asynchronously copy input slice to device
+        size_t current_input_size = current_batch_size * Channel * Height * Width * sizeof(float);
+        cudaMemcpyAsync(device_input_slices, host_input_slice, current_input_size, cudaMemcpyHostToDevice, streams[slice_idx]);
+
+        // Update dimensions for the current batch size
+        int current_W_unroll = current_batch_size * Height_out * Width_out;
+
+        // Set kernel dimensions for unrolling
+        dim3 blockDim_unroll(16, 16);
+        dim3 gridDim_unroll((current_W_unroll + blockDim_unroll.x - 1) / blockDim_unroll.x,
+                            (H_unroll + blockDim_unroll.y - 1) / blockDim_unroll.y);
+
+        // Launch unrolling kernel
+        matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll, 0, streams[slice_idx]>>>(
+            device_input_slices,
+            unrolled_matrix,
+            current_batch_size,
+            Channel,
+            Height,
+            Width,
+            K
+        );
+
+        // Set kernel dimensions for matrix multiplication
+        int numARows = Map_out;
+        int numAColumns = Channel * K * K;
+        int numBRows = Channel * K * K;
+        int numBColumns = current_W_unroll;
+        numCRows = Map_out;
+        numCColumns = current_W_unroll;
+
+        dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
+        dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
+
+        // Launch matrix multiplication kernel
+        matrixMultiplyShared<<<dimGrid, dimBlock, 0, streams[slice_idx]>>>(
+            *device_mask_ptr,
+            unrolled_matrix,
+            matmul_output,
+            numARows, numAColumns,
+            numBRows, numBColumns,
+            numCRows, numCColumns
+        );
+
+        // Set kernel dimensions for permutation
+        const int out_image_size = Height_out * Width_out;
+        dim3 permute_kernel_grid_dim((out_image_size - 1) / BLOCK_SIZE + 1, current_batch_size, 1);
+
+        // Launch permutation kernel
+        matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE, 0, streams[slice_idx]>>>(
+            matmul_output,
+            device_output_slices,
+            Map_out,
+            current_batch_size,
+            out_image_size
+        );
+
+        // Asynchronously copy output slice back to host
+        size_t current_output_size = current_batch_size * Map_out * Height_out * Width_out * sizeof(float);
+        cudaMemcpyAsync(host_output_slice, device_output_slices, current_output_size, cudaMemcpyDeviceToHost, streams[slice_idx]);
+    }
+
+    // Synchronize and destroy streams
+    for (int i = 0; i < num_slices; ++i) {
+        cudaStreamSynchronize(streams[i]);
+        cudaStreamDestroy(streams[i]);
+    }
+    delete[] streams;
+
+    // Free device memory
+    cudaFree(device_input_slices);
+    cudaFree(device_output_slices);
+    cudaFree(unrolled_matrix);
+    cudaFree(matmul_output);
+    cudaFree(*device_mask_ptr);
+    *device_mask_ptr = nullptr;
+
+    // Set device pointers to nullptr as we've freed the memory
+    *device_input_ptr = nullptr;
+    *device_output_ptr = nullptr;
 
     // Check for errors
     cudaError_t error = cudaGetLastError();
@@ -153,128 +269,128 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 }
 
 
-__host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *device_input, const float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
-{
-    const int Height_out = Height - K + 1;
-    const int Width_out = Width - K + 1;
-    const int Height_unrolled = Channel * K * K;
+// __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *device_input, const float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
+// {
+//     const int Height_out = Height - K + 1;
+//     const int Width_out = Width - K + 1;
+//     const int Height_unrolled = Channel * K * K;
 
-    // Determine the number of mini-batches
-    int num_batches = (Batch + MAX_BATCH_SIZE - 1) / MAX_BATCH_SIZE;
+//     // Determine the number of mini-batches
+//     int num_batches = (Batch + MAX_BATCH_SIZE - 1) / MAX_BATCH_SIZE;
 
-    float *unrolled_matrix;  // Pointer to device memory for storing the unrolled matrix
-    float *matmul_output;    // Pointer to device memory for storing the result of matrix multiplication
+//     float *unrolled_matrix;  // Pointer to device memory for storing the unrolled matrix
+//     float *matmul_output;    // Pointer to device memory for storing the result of matrix multiplication
     
-    // Allocate device memory for unrolled_matrix and matmul_output for the maximum mini-batch size
-    size_t max_unroll_size = Height_unrolled * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
-    cudaMalloc((void**)&unrolled_matrix, max_unroll_size);
+//     // Allocate device memory for unrolled_matrix and matmul_output for the maximum mini-batch size
+//     size_t max_unroll_size = Height_unrolled * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
+//     cudaMalloc((void**)&unrolled_matrix, max_unroll_size);
 
-    size_t max_matmul_size = Map_out * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
+//     size_t max_matmul_size = Map_out * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
     
-    cudaMalloc((void**)&matmul_output, max_matmul_size);
-    // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
+//     cudaMalloc((void**)&matmul_output, max_matmul_size);
+//     // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
     
-    // Iterate over each mini-batch
-    for(int batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
-        // Calculate the current mini-batch size
-        int current_batch_size = (batch_idx == num_batches - 1) ? (Batch - batch_idx * MAX_BATCH_SIZE) : MAX_BATCH_SIZE;
+//     // Iterate over each mini-batch
+//     for(int batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
+//         // Calculate the current mini-batch size
+//         int current_batch_size = (batch_idx == num_batches - 1) ? (Batch - batch_idx * MAX_BATCH_SIZE) : MAX_BATCH_SIZE;
 
-        // Calculate current W_unroll
-        int current_W_unroll = current_batch_size * Height_out * Width_out;
-        // Set the kernel dimensions for unrolling using a 2D grid
-        dim3 blockDim_unroll(16, 16);
-        dim3 gridDim_unroll((current_W_unroll + blockDim_unroll.x - 1) / blockDim_unroll.x,
-                            (Height_unrolled + blockDim_unroll.y - 1) / blockDim_unroll.y);
+//         // Calculate current W_unroll
+//         int current_W_unroll = current_batch_size * Height_out * Width_out;
+//         // Set the kernel dimensions for unrolling using a 2D grid
+//         dim3 blockDim_unroll(16, 16);
+//         dim3 gridDim_unroll((current_W_unroll + blockDim_unroll.x - 1) / blockDim_unroll.x,
+//                             (Height_unrolled + blockDim_unroll.y - 1) / blockDim_unroll.y);
         
-        // Call the matrix unrolling kernel for the current mini-batch
-        matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll>>>(
-            device_input + batch_idx * MAX_BATCH_SIZE * Channel * Height * Width, // Offset input pointer
-            unrolled_matrix, 
-            current_batch_size, 
-            Channel, 
-            Height, 
-            Width, 
-            K
-        );
-
-        
-        cudaError_t error = cudaGetLastError();
-        if(error != cudaSuccess)
-        {
-            std::cout<<"CUDA error (unrolling kernel): "<<cudaGetErrorString(error)<<std::endl;
-            exit(-1);
-        }
-
-        // TODO: Set the kernel dimensions and call the matmul kernel
-        int numARows = Map_out;
-        int numAColumns = Channel * K * K;
-        int numBRows = Channel * K * K;
-        int numBColumns = current_W_unroll;
-        int numCRows = Map_out;
-        int numCColumns = current_W_unroll;
-
-        dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
-        dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
-
-        // Call the matrix multiplication kernel
-        matrixMultiplyShared<<<dimGrid, dimBlock>>>(device_mask, unrolled_matrix, matmul_output,
-                                                    numARows, numAColumns,
-                                                    numBRows, numBColumns,
-                                                    numCRows, numCColumns);
+//         // Call the matrix unrolling kernel for the current mini-batch
+//         matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll>>>(
+//             device_input + batch_idx * MAX_BATCH_SIZE * Channel * Height * Width, // Offset input pointer
+//             unrolled_matrix, 
+//             current_batch_size, 
+//             Channel, 
+//             Height, 
+//             Width, 
+//             K
+//         );
 
         
-        error = cudaGetLastError();
-        if(error != cudaSuccess)
-        {
-            std::cout<<"CUDA error (matmul kernel): "<<cudaGetErrorString(error)<<std::endl;
-            exit(-1);
-        }
+//         cudaError_t error = cudaGetLastError();
+//         if(error != cudaSuccess)
+//         {
+//             std::cout<<"CUDA error (unrolling kernel): "<<cudaGetErrorString(error)<<std::endl;
+//             exit(-1);
+//         }
 
-        // Permute the result of matrix multiplication
-        const int out_image_size = Height_out * Width_out;
-        dim3 permute_kernel_grid_dim((out_image_size - 1) / BLOCK_SIZE + 1, current_batch_size, 1);
-        matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE>>>(
-            matmul_output, 
-            device_output + batch_idx * MAX_BATCH_SIZE * Map_out * out_image_size, // Offset output pointer
-            Map_out, 
-            current_batch_size, 
-            out_image_size
-        );
+//         // TODO: Set the kernel dimensions and call the matmul kernel
+//         int numARows = Map_out;
+//         int numAColumns = Channel * K * K;
+//         int numBRows = Channel * K * K;
+//         int numBColumns = current_W_unroll;
+//         int numCRows = Map_out;
+//         int numCColumns = current_W_unroll;
 
-        // Check for errors after permutation
-        error = cudaGetLastError();
-        if(error != cudaSuccess)
-        {
-            std::cout<<"CUDA error (permute kernel): "<<cudaGetErrorString(error)<<std::endl;
-            exit(-1);
-        }
-    }
+//         dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
+//         dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
 
-    cudaFree(matmul_output);
-    cudaFree(unrolled_matrix);
-}
+//         // Call the matrix multiplication kernel
+//         matrixMultiplyShared<<<dimGrid, dimBlock>>>(device_mask, unrolled_matrix, matmul_output,
+//                                                     numARows, numAColumns,
+//                                                     numBRows, numBColumns,
+//                                                     numCRows, numCColumns);
+
+        
+//         error = cudaGetLastError();
+//         if(error != cudaSuccess)
+//         {
+//             std::cout<<"CUDA error (matmul kernel): "<<cudaGetErrorString(error)<<std::endl;
+//             exit(-1);
+//         }
+
+//         // Permute the result of matrix multiplication
+//         const int out_image_size = Height_out * Width_out;
+//         dim3 permute_kernel_grid_dim((out_image_size - 1) / BLOCK_SIZE + 1, current_batch_size, 1);
+//         matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE>>>(
+//             matmul_output, 
+//             device_output + batch_idx * MAX_BATCH_SIZE * Map_out * out_image_size, // Offset output pointer
+//             Map_out, 
+//             current_batch_size, 
+//             out_image_size
+//         );
+
+//         // Check for errors after permutation
+//         error = cudaGetLastError();
+//         if(error != cudaSuccess)
+//         {
+//             std::cout<<"CUDA error (permute kernel): "<<cudaGetErrorString(error)<<std::endl;
+//             exit(-1);
+//         }
+//     }
+
+//     cudaFree(matmul_output);
+//     cudaFree(unrolled_matrix);
+// }
 
 
-__host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *device_output, float *device_input, float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
-{
-    // TODO: Copy the output back to host
-    const int Height_out = Height - K + 1;
-    const int Width_out = Width - K + 1;
-    size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
-    cudaMemcpy(host_output, device_output, output_size, cudaMemcpyDeviceToHost);
+// __host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *device_output, float *device_input, float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
+// {
+//     // TODO: Copy the output back to host
+//     const int Height_out = Height - K + 1;
+//     const int Width_out = Width - K + 1;
+//     size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
+//     cudaMemcpy(host_output, device_output, output_size, cudaMemcpyDeviceToHost);
     
-    // TODO: Free device memory
-    cudaFree(device_output);
-    cudaFree(device_input);
-    cudaFree(device_mask);
+//     // TODO: Free device memory
+//     cudaFree(device_output);
+//     cudaFree(device_input);
+//     cudaFree(device_mask);
 
-    cudaError_t error = cudaGetLastError();
-    if(error != cudaSuccess)
-    {
-        std::cout<<"CUDA error (epilog): "<<cudaGetErrorString(error)<<std::endl;
-        exit(-1);
-    }
-}
+//     cudaError_t error = cudaGetLastError();
+//     if(error != cudaSuccess)
+//     {
+//         std::cout<<"CUDA error (epilog): "<<cudaGetErrorString(error)<<std::endl;
+//         exit(-1);
+//     }
+// }
 
 
 __host__ void GPUInterface::get_device_properties()
