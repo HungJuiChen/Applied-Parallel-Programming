@@ -6,7 +6,7 @@
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
 
-__global__ void matrix_unrolling_kernel(const float *__restrict__ input, float *__restrict__ output,
+__global__ void matrix_unrolling_kernel(const float *input, float *output,
                                         const int Batch, const int Channel,
                                         const int Height, const int Width,
                                         const int K) {
@@ -24,9 +24,7 @@ __global__ void matrix_unrolling_kernel(const float *__restrict__ input, float *
     */
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-    //(void)Height_out; // silence declared but never referenced warning. remove this line when you start working
-    //(void)Width_out; // silence declared but never referenced warning. remove this line when you start working
-
+   
     const int H_unroll = Channel * K * K;
     const int W_unroll = Batch * Height_out * Width_out;
 
@@ -34,42 +32,52 @@ __global__ void matrix_unrolling_kernel(const float *__restrict__ input, float *
     int h_unroll = blockIdx.y * blockDim.y + threadIdx.y;
     int w_unroll = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (h_unroll < H_unroll && w_unroll < W_unroll) {
-        int c = h_unroll / (K * K);
-        int p = (h_unroll % (K * K)) / K;
-        int q = (h_unroll % (K * K)) % K;
+    // Define the unroll factor
+    const int UNROLL_FACTOR = 4;
 
-        int b = w_unroll / (Height_out * Width_out);
-        int remainder = w_unroll % (Height_out * Width_out);
-        int h = remainder / Width_out;
-        int w = remainder % Width_out;
+    // Calculate the maximum number of iterations based on the unroll factor
+    int max_iterations = (W_unroll + UNROLL_FACTOR - 1) / UNROLL_FACTOR;
 
-        int input_row = h + p;
-        int input_col = w + q;
-        
-    
-        // We have some nice #defs for you below to simplify indexing. Feel free to use them, or create your own.
-        // An example use of these macros:
-        // float a = in_4d(0,0,0,0)
+    #define in_4d(i3, i2, i1, i0) input[(i3) * (Channel * Height * Width) + (i2) * (Height * Width) + (i1) * (Width) + i0]
+    #define out_2d(i1, i0) output[(i1) * W_unroll + (i0)]
 
-        #define in_4d(i3, i2, i1, i0) input[(i3) * (Channel * Height * Width) + (i2) * (Height * Width) + (i1) * (Width) + i0]
-        #define out_2d(i1, i0) output[(i1) * W_unroll + (i0)]
+    for (int iter = 0; iter < max_iterations; iter++) {
+        // Calculate the current w_unroll with unroll offset
+        int current_w_unroll = iter * UNROLL_FACTOR + w_unroll;
 
-        // TODO: Insert your input matrix unrolling kernel code here
-        if (input_row < Height && input_col < Width) {
-            out_2d(h_unroll, w_unroll) = in_4d(b, c, input_row, input_col);
-        } else {
-            out_2d(h_unroll, w_unroll) = 0.0f;
+        // Process multiple elements per thread
+        #pragma unroll
+        for (int offset = 0; offset < UNROLL_FACTOR; offset++) {
+            int idx = current_w_unroll + offset;
+            if (h_unroll < H_unroll && idx < W_unroll) {
+                int c = h_unroll / (K * K);
+                int p = (h_unroll % (K * K)) / K;
+                int q = (h_unroll % (K * K)) % K;
+
+                int b = idx / (Height_out * Width_out);
+                int remainder = idx % (Height_out * Width_out);
+                int h = remainder / Width_out;
+                int w = remainder % Width_out;
+
+                int input_row = h + p;
+                int input_col = w + q;
+
+                if (input_row < Height && input_col < Width) {
+                    out_2d(h_unroll, idx) = in_4d(b, c, input_row, input_col);
+                } else {
+                    out_2d(h_unroll, idx) = 0.0f;
+                }
+            }
         }
-
-        #undef in_4d
-        #undef out_2d
     }
+
+    #undef in_4d
+    #undef out_2d
 }
 
 // Tiled matrix multiplication kernel. Computes C = AB
 // You don't need to modify this kernel.
-__global__ void matrixMultiplyShared(const float *__restrict__ A, const float *__restrict__ B, float *__restrict__ C,
+__global__ void matrixMultiplyShared(const float *A, const float *B, float *C,
                                      int numARows, int numAColumns,
                                      int numBRows, int numBColumns,
                                      int numCRows, int numCColumns)
@@ -112,7 +120,7 @@ __global__ void matrixMultiplyShared(const float *__restrict__ A, const float *_
 // The output feature map after matmul is of shape Map_out x Batch x Height_out x Width_out,
 // and we need to permute it into Batch x Map_out x Height_out x Width_out.
 // You don't need to modify this kernel.
-__global__ void matrix_permute_kernel(const float *__restrict__ input, float *__restrict__ output, int Map_out,
+__global__ void matrix_permute_kernel(const float *input, float *output, int Map_out,
                                       int Batch, int image_size) {
     int b = blockIdx.y;
     int x = blockIdx.x * BLOCK_SIZE + threadIdx.x;
