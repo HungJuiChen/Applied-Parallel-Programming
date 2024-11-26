@@ -1,5 +1,6 @@
 #include <cmath>
 #include <iostream>
+#include <cublas_v2.h>
 #include "gpu-new-forward.h"
 
 #define TILE_WIDTH 16
@@ -24,7 +25,7 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     */
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-   
+
     const int H_unroll = Channel * K * K;
     const int W_unroll = Batch * Height_out * Width_out;
 
@@ -32,47 +33,37 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     int h_unroll = blockIdx.y * blockDim.y + threadIdx.y;
     int w_unroll = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // Define the unroll factor
-    const int UNROLL_FACTOR = 2;
+    if (h_unroll < H_unroll && w_unroll < W_unroll) {
+        int c = h_unroll / (K * K);
+        int p = (h_unroll % (K * K)) / K;
+        int q = (h_unroll % (K * K)) % K;
 
-    // Calculate the maximum number of iterations based on the unroll factor
-    int max_iterations = (W_unroll + UNROLL_FACTOR - 1) / UNROLL_FACTOR;
+        int b = w_unroll / (Height_out * Width_out);
+        int remainder = w_unroll % (Height_out * Width_out);
+        int h = remainder / Width_out;
+        int w = remainder % Width_out;
 
-    #define in_4d(i3, i2, i1, i0) input[(i3) * (Channel * Height * Width) + (i2) * (Height * Width) + (i1) * (Width) + i0]
-    #define out_2d(i1, i0) output[(i1) * W_unroll + (i0)]
+        int input_row = h + p;
+        int input_col = w + q;
+        
+    
+        // We have some nice #defs for you below to simplify indexing. Feel free to use them, or create your own.
+        // An example use of these macros:
+        // float a = in_4d(0,0,0,0)
 
-    for (int iter = 0; iter < max_iterations; iter++) {
-        // Calculate the current w_unroll with unroll offset
-        int current_w_unroll = iter * UNROLL_FACTOR + w_unroll;
+        #define in_4d(i3, i2, i1, i0) input[(i3) * (Channel * Height * Width) + (i2) * (Height * Width) + (i1) * (Width) + i0]
+        #define out_2d(i1, i0) output[(i1) * W_unroll + (i0)]
 
-        // Process multiple elements per thread
-        #pragma unroll
-        for (int offset = 0; offset < UNROLL_FACTOR; offset++) {
-            int idx = current_w_unroll + offset;
-            if (h_unroll < H_unroll && idx < W_unroll) {
-                int c = h_unroll / (K * K);
-                int p = (h_unroll % (K * K)) / K;
-                int q = (h_unroll % (K * K)) % K;
-
-                int b = idx / (Height_out * Width_out);
-                int remainder = idx % (Height_out * Width_out);
-                int h = remainder / Width_out;
-                int w = remainder % Width_out;
-
-                int input_row = h + p;
-                int input_col = w + q;
-
-                if (input_row < Height && input_col < Width) {
-                    out_2d(h_unroll, idx) = in_4d(b, c, input_row, input_col);
-                } else {
-                    out_2d(h_unroll, idx) = 0.0f;
-                }
-            }
+        // TODO: Insert your input matrix unrolling kernel code here
+        if (input_row < Height && input_col < Width) {
+            out_2d(h_unroll, w_unroll) = in_4d(b, c, input_row, input_col);
+        } else {
+            out_2d(h_unroll, w_unroll) = 0.0f;
         }
-    }
 
-    #undef in_4d
-    #undef out_2d
+        #undef in_4d
+        #undef out_2d
+    }
 }
 
 // Tiled matrix multiplication kernel. Computes C = AB
@@ -176,6 +167,10 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 
 __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *device_input, const float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
+    // Initialize cuBLAS handle
+    cublasHandle_t handle;
+    cublasCreate(&handle);
+
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
     const int Height_unrolled = Channel * K * K;
@@ -184,15 +179,15 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     int num_batches = (Batch + MAX_BATCH_SIZE - 1) / MAX_BATCH_SIZE;
 
     float *unrolled_matrix;  // Pointer to device memory for storing the unrolled matrix
-    float *matmul_output;    // Pointer to device memory for storing the result of matrix multiplication
     
     // Allocate device memory for unrolled_matrix and matmul_output for the maximum mini-batch size
     size_t max_unroll_size = Height_unrolled * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
     cudaMalloc((void**)&unrolled_matrix, max_unroll_size);
 
-    size_t max_matmul_size = Map_out * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
-    
-    cudaMalloc((void**)&matmul_output, max_matmul_size);
+    // Define alpha and beta for cuBLAS
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+
     // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
     
     // Iterate over each mini-batch
@@ -226,28 +221,42 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             exit(-1);
         }
 
-        // TODO: Set the kernel dimensions and call the matmul kernel
-        int numARows = Map_out;
-        int numAColumns = Channel * K * K;
-        int numBRows = Channel * K * K;
-        int numBColumns = current_W_unroll;
-        int numCRows = Map_out;
-        int numCColumns = current_W_unroll;
+        // Use cuBLAS to perform matrix multiplication
+        // Compute C = alpha * A * B + beta * C
+        // A: device_mask (Map_out x (Channel*K*K))
+        // B: unrolled_matrix ((Channel*K*K) x (current_W_unroll))
+        // C: device_output_batch (Map_out x current_W_unroll)
 
-        dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
-        dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
+        // Set matrix dimensions
+        int m = Map_out;             // Number of rows of A and C
+        int n = current_W_unroll;    // Number of columns of B and C
+        int k = Channel * K * K;     // Number of columns of A and rows of B
 
-        // Call the matrix multiplication kernel
-        matrixMultiplyShared<<<dimGrid, dimBlock>>>(device_mask, unrolled_matrix, matmul_output,
-                                                    numARows, numAColumns,
-                                                    numBRows, numBColumns,
-                                                    numCRows, numCColumns);
+        // Leading dimensions
+        int lda = m; // Since cuBLAS uses column-major order
+        int ldb = k;
+        int ldc = m;
+
+        // Allocate temporary output matrix for the batch
+        float *device_output_batch;
+        size_t batch_output_size = m * n * sizeof(float);
+        cudaMalloc((void**)&device_output_batch, batch_output_size);
+
+        // Perform the matrix multiplication
+        cublasStatus_t status = cublasSgemm(handle,
+                                            CUBLAS_OP_N, CUBLAS_OP_N,
+                                            m, n, k,
+                                            &alpha,
+                                            device_mask, lda,
+                                            unrolled_matrix, ldb,
+                                            &beta,
+                                            device_output_batch, ldc);
 
         
         error = cudaGetLastError();
         if(error != cudaSuccess)
         {
-            std::cout<<"CUDA error (matmul kernel): "<<cudaGetErrorString(error)<<std::endl;
+            std::cout<<"CUBLAS sgemm failed" <<cudaGetErrorString(error)<<std::endl;
             exit(-1);
         }
 
@@ -255,12 +264,15 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         const int out_image_size = Height_out * Width_out;
         dim3 permute_kernel_grid_dim((out_image_size - 1) / BLOCK_SIZE + 1, current_batch_size, 1);
         matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE>>>(
-            matmul_output, 
+            device_output_batch, 
             device_output + batch_idx * MAX_BATCH_SIZE * Map_out * out_image_size, // Offset output pointer
             Map_out, 
             current_batch_size, 
             out_image_size
         );
+
+        // Free the temporary output matrix
+        cudaFree(device_output_batch);
 
         // Check for errors after permutation
         error = cudaGetLastError();
@@ -271,7 +283,9 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         }
     }
 
-    cudaFree(matmul_output);
+    // Destroy cuBLAS handle
+    cublasDestroy(handle);
+
     cudaFree(unrolled_matrix);
 }
 
