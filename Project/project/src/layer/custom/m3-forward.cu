@@ -33,7 +33,7 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     int w_unroll = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Define the unroll factor
-    const int UNROLL_FACTOR = 4;
+    const int UNROLL_FACTOR = 8;
 
     // Calculate the maximum number of iterations based on the unroll factor
     int max_iterations = (W_unroll + UNROLL_FACTOR - 1) / UNROLL_FACTOR;
