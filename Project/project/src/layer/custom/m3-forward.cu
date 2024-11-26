@@ -1,6 +1,7 @@
 #include <cmath>
 #include <iostream>
 #include "gpu-new-forward.h"
+#include <cublas_v2.h>
 
 #define TILE_WIDTH 16
 #define BLOCK_SIZE 256
@@ -170,6 +171,14 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     const int Width_out = Width - K + 1;
     const int Height_unrolled = Channel * K * K;
 
+    // Initialize cuBLAS
+    cublasHandle_t handle;
+    cublasStatus_t status = cublasCreate(&handle);
+    if (status != CUBLAS_STATUS_SUCCESS) {
+        std::cerr << "Failed to create cuBLAS handle" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
     // Determine the number of mini-batches
     int num_batches = (Batch + MAX_BATCH_SIZE - 1) / MAX_BATCH_SIZE;
 
@@ -216,29 +225,41 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             exit(-1);
         }
 
-        // TODO: Set the kernel dimensions and call the matmul kernel
-        int numARows = Map_out;
-        int numAColumns = Channel * K * K;
-        int numBRows = Channel * K * K;
-        int numBColumns = current_W_unroll;
-        int numCRows = Map_out;
-        int numCColumns = current_W_unroll;
+        // Prepare parameters for cuBLAS sgemm
+        // A: device_mask (Map_out x (Channel * K * K)) - assuming row-major
+        // B: unrolled_matrix ((Channel * K * K) x current_W_unroll) - assuming row-major
+        // C: matmul_output (Map_out x current_W_unroll) - to store the result
 
-        dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
-        dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
+        // Since cuBLAS is column-major, to perform C = A * B in row-major,
+        // we can compute C^T = B^T * A^T
 
-        // Call the matrix multiplication kernel
-        matrixMultiplyShared<<<dimGrid, dimBlock>>>(device_mask, unrolled_matrix, matmul_output,
-                                                    numARows, numAColumns,
-                                                    numBRows, numBColumns,
-                                                    numCRows, numCColumns);
+        // Thus, set transa = CUBLAS_OP_T, transb = CUBLAS_OP_T
+        // and swap A and B in the parameters
 
-        
-        error = cudaGetLastError();
-        if(error != cudaSuccess)
-        {
-            std::cout<<"CUDA error (matmul kernel): "<<cudaGetErrorString(error)<<std::endl;
-            exit(-1);
+        const float alpha = 1.0f;
+        const float beta = 0.0f;
+
+        // Dimensions for transposed multiplication
+        int lda = Map_out;
+        int ldb = Channel * K * K;
+        int ldc = Map_out;
+
+        status = cublasSgemm(handle,
+                             CUBLAS_OP_T, // transa
+                             CUBLAS_OP_T, // transb
+                             current_W_unroll, // m: columns of B^T (rows of B)
+                             Map_out,          // n: columns of A^T (rows of A)
+                             Channel * K * K,  // k: rows of B^T / columns of A^T
+                             &alpha,
+                             device_mask, lda,     // A: device_mask^T
+                             unrolled_matrix, ldb, // B: unrolled_matrix^T
+                             &beta,
+                             matmul_output, ldc    // C: matmul_output^T
+        );
+
+        if (status != CUBLAS_STATUS_SUCCESS) {
+            std::cerr << "cuBLAS sgemm failed" << std::endl;
+            exit(EXIT_FAILURE);
         }
 
         // Permute the result of matrix multiplication
@@ -260,6 +281,9 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             exit(-1);
         }
     }
+
+    // Destroy cuBLAS handle
+    cublasDestroy(handle);
 
     cudaFree(matmul_output);
     cudaFree(unrolled_matrix);
