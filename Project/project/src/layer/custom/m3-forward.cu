@@ -6,11 +6,7 @@
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
 
-#define MAX_MASK_SIZE 8192 
-
-__constant__ float const_device_mask[MAX_MASK_SIZE];
-
-__global__ void matrix_unrolling_kernel(const float *input, float *output,
+__global__ void matrix_unrolling_kernel(const float *__restrict__ input, float *__restrict__ output,
                                         const int Batch, const int Channel,
                                         const int Height, const int Width,
                                         const int K) {
@@ -28,7 +24,9 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     */
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-    
+    //(void)Height_out; // silence declared but never referenced warning. remove this line when you start working
+    //(void)Width_out; // silence declared but never referenced warning. remove this line when you start working
+
     const int H_unroll = Channel * K * K;
     const int W_unroll = Batch * Height_out * Width_out;
 
@@ -71,12 +69,11 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
 
 // Tiled matrix multiplication kernel. Computes C = AB
 // You don't need to modify this kernel.
-__global__ void matrixMultiplyShared(const float *B, float *C,
+__global__ void matrixMultiplyShared(const float *__restrict__ A, const float *__restrict__ B, float *__restrict__ C,
                                      int numARows, int numAColumns,
                                      int numBRows, int numBColumns,
                                      int numCRows, int numCColumns)
 {
-    extern __shared__ float shared_data[];
     __shared__ float tileA[TILE_WIDTH][TILE_WIDTH];
     __shared__ float tileB[TILE_WIDTH][TILE_WIDTH];
 
@@ -87,7 +84,7 @@ __global__ void matrixMultiplyShared(const float *B, float *C,
 
     for (int tileId = 0; tileId < (numAColumns - 1) / TILE_WIDTH + 1; tileId++) {
         if (row < numARows && tileId * TILE_WIDTH + tx < numAColumns) {
-            tileA[ty][tx] = const_device_mask[(size_t) row * numAColumns + tileId * TILE_WIDTH + tx];
+            tileA[ty][tx] = A[(size_t) row * numAColumns + tileId * TILE_WIDTH + tx];
         } else {
             tileA[ty][tx] = 0;
         }
@@ -115,7 +112,7 @@ __global__ void matrixMultiplyShared(const float *B, float *C,
 // The output feature map after matmul is of shape Map_out x Batch x Height_out x Width_out,
 // and we need to permute it into Batch x Map_out x Height_out x Width_out.
 // You don't need to modify this kernel.
-__global__ void matrix_permute_kernel(const float *input, float *output, int Map_out,
+__global__ void matrix_permute_kernel(const float *__restrict__ input, float *__restrict__ output, int Map_out,
                                       int Batch, int image_size) {
     int b = blockIdx.y;
     int x = blockIdx.x * BLOCK_SIZE + threadIdx.x;
@@ -154,20 +151,9 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
     cudaMalloc((void**) device_output_ptr, output_size);
 
     // Allocate device memory for mask
-    // size_t mask_size = Map_out * Channel * K * K * sizeof(float);
-    // cudaMalloc((void**) device_mask_ptr, mask_size);
-    // cudaMemcpy(*device_mask_ptr, host_mask, mask_size, cudaMemcpyHostToDevice);
-
-    // Copy mask to constant memory
     size_t mask_size = Map_out * Channel * K * K * sizeof(float);
-    if (mask_size > MAX_MASK_SIZE * sizeof(float)) {
-        std::cerr << "Error: Mask size exceeds MAX_MASK_SIZE\n";
-        exit(-1);
-    }
-    cudaMemcpyToSymbol(const_device_mask, host_mask, mask_size);
-
-    // Set device_mask_ptr to NULL since we're using constant memory
-    *device_mask_ptr = NULL;
+    cudaMalloc((void**) device_mask_ptr, mask_size);
+    cudaMemcpy(*device_mask_ptr, host_mask, mask_size, cudaMemcpyHostToDevice);
 
     // Check for errors
     cudaError_t error = cudaGetLastError();
@@ -244,7 +230,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
 
         // Call the matrix multiplication kernel
-        matrixMultiplyShared<<<dimGrid, dimBlock>>>(unrolled_matrix, matmul_output,
+        matrixMultiplyShared<<<dimGrid, dimBlock>>>(device_mask, unrolled_matrix, matmul_output,
                                                     numARows, numAColumns,
                                                     numBRows, numBColumns,
                                                     numCRows, numCColumns);
@@ -293,7 +279,7 @@ __host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *d
     // TODO: Free device memory
     cudaFree(device_output);
     cudaFree(device_input);
-    //cudaFree(device_mask);
+    cudaFree(device_mask);
 
     cudaError_t error = cudaGetLastError();
     if(error != cudaSuccess)
