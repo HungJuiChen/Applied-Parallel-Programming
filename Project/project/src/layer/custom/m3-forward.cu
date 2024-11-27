@@ -117,8 +117,10 @@ __global__ void matrix_permute_kernel(const float *input, float *output, int Map
     int x = blockIdx.x * BLOCK_SIZE + threadIdx.x;
     if (x < image_size) {
         for (int m = 0; m < Map_out; m++) {
+            // output[b * Map_out * image_size + m * image_size + x] =
+            //         input[m * Batch * image_size + b * image_size + x];
             output[b * Map_out * image_size + m * image_size + x] =
-                    input[m * Batch * image_size + b * image_size + x];
+                    input[x * Map_out + m];
         }
     }
 }
@@ -224,8 +226,8 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         // Perform matrix multiplication: matmul_output = device_mask * unrolled_matrix
         cublasStatus_t status = cublasSgemm(
             cublas_handle,
-            CUBLAS_OP_N,         // Transpose unrolled_matrix (B)
-            CUBLAS_OP_N,         // Transpose device_mask (A)
+            CUBLAS_OP_T,         // Transpose unrolled_matrix (B)
+            CUBLAS_OP_T,         // Transpose device_mask (A)
             current_W_unroll,    // m
             Map_out,             // n
             Height_unrolled,     // k
