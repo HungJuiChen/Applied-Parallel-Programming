@@ -1,7 +1,7 @@
 #include <cmath>
 #include <iostream>
-#include "gpu-new-forward.h"
 #include <cublas_v2.h>
+#include "gpu-new-forward.h"
 
 #define TILE_WIDTH 16
 #define BLOCK_SIZE 256
@@ -123,21 +123,9 @@ __global__ void matrix_permute_kernel(const float *input, float *output, int Map
     }
 }
 
-
 __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, const float *host_input, const float *host_mask, float **device_output_ptr, float **device_input_ptr, float **device_mask_ptr, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
     // TODO: Allocate memory and copy over the relevant data structures to the GPU
-
-    // We pass double pointers for you to initialize the relevant device pointers,
-    //  which are passed to the other two functions.
-
-    // Useful snippet for error checking
-    // cudaError_t error = cudaGetLastError();
-    // if(error != cudaSuccess)
-    // {
-    //     std::cout<<"CUDA error: "<<cudaGetErrorString(error)<<std::endl;
-    //     exit(-1);
-    // }
 
     // Allocate device memory for input
     size_t input_size = Batch * Channel * Height * Width * sizeof(float);
@@ -172,14 +160,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     const int Width_out = Width - K + 1;
     const int Height_unrolled = Channel * K * K;
 
-    // Initialize cuBLAS
-    cublasHandle_t handle;
-    cublasStatus_t status = cublasCreate(&handle);
-    if (status != CUBLAS_STATUS_SUCCESS) {
-        std::cerr << "Failed to create cuBLAS handle" << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
     // Determine the number of mini-batches
     int num_batches = (Batch + MAX_BATCH_SIZE - 1) / MAX_BATCH_SIZE;
 
@@ -192,7 +172,11 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
 
     size_t max_matmul_size = Map_out * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
     cudaMalloc((void**)&matmul_output, max_matmul_size);
-    
+
+    // Initialize cuBLAS handle
+    cublasHandle_t cublas_handle;
+    cublasCreate(&cublas_handle);
+
     // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
     
     // Iterate over each mini-batch
@@ -226,63 +210,40 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             exit(-1);
         }
 
-        cudaDeviceSynchronize();
-        error = cudaGetLastError();
-        if(error != cudaSuccess)
-        {
-            std::cerr << "CUDA synchronization error after unrolling kernel: " << cudaGetErrorString(error) << std::endl;
-            exit(-1);
-        }
+        // TODO: Set the kernel dimensions and call the matmul kernel
 
-        // Prepare parameters for cuBLAS sgemm
-        // A: device_mask (Map_out x (Channel * K * K)) - assuming row-major
-        // B: unrolled_matrix ((Channel * K * K) x current_W_unroll) - assuming row-major
-        // C: matmul_output (Map_out x current_W_unroll) - to store the result
+        // Use cuBLAS for matrix multiplication
+        float alpha = 1.0f;
+        float beta = 0.0f;
 
-        // Since cuBLAS is column-major, to perform C = A * B in row-major,
-        // we can compute C^T = B^T * A^T
+        // Dimensions for cuBLAS
+        int m = current_W_unroll;     // Number of rows of matrix B^T (columns of B)
+        int n = Map_out;              // Number of columns of matrix A^T (rows of A)
+        int k = Height_unrolled;      // Shared dimension
 
-        // Thus, set transa = CUBLAS_OP_T, transb = CUBLAS_OP_T
-        // and swap A and B in the parameters
-
-         // Prepare parameters for cuBLAS sgemm
-        const float alpha = 1.0f;
-        const float beta = 0.0f;
-
-        // Dimensions for cuBLAS GEMM
-        int m = Map_out;
-        int n = current_W_unroll;
-        int k = Channel * K * K;
-
-        // Perform C = A * B using cuBLAS
-        // A: device_mask (Map_out x k), treated as A^T (k x Map_out)
-        // B: unrolled_matrix (k x n), treated as B^T (n x k)
-        // C: matmul_output (Map_out x n), treated as C^T (n x Map_out)
-        status = cublasSgemm(handle,
-                             CUBLAS_OP_T, // transa
-                             CUBLAS_OP_T, // transb
-                             n,           // m: columns of B^T
-                             m,           // n: columns of A^T
-                             k,           // k: shared dimension
-                             &alpha,
-                             device_mask, k,     // A: device_mask^T, lda = k (Correct)
-                             unrolled_matrix, n, // B: unrolled_matrix^T, ldb = n (Correct)
-                             &beta,
-                             matmul_output, n    // C: matmul_output^T, ldc = n (Already Correct)
+        // Perform matrix multiplication: matmul_output = device_mask * unrolled_matrix
+        cublasStatus_t status = cublasSgemm(
+            cublas_handle,
+            CUBLAS_OP_T,         // Transpose unrolled_matrix (B^T)
+            CUBLAS_OP_N,         // No transpose on device_mask (A)
+            m,                   // Number of rows in B^T
+            n,                   // Number of columns in A
+            k,                   // Shared dimension
+            &alpha,
+            unrolled_matrix,     // B^T
+            k,                   // Leading dimension of B^T
+            device_mask,         // A
+            k,                   // Leading dimension of A
+            &beta,
+            matmul_output,       // C
+            m                    // Leading dimension of C
         );
 
         if (status != CUBLAS_STATUS_SUCCESS) {
-            std::cerr << "cuBLAS sgemm failed with status: " << status << std::endl;
-            exit(EXIT_FAILURE);
+            std::cerr << "cuBLAS sgemm failed" << std::endl;
+            exit(1);
         }
-
-        cudaDeviceSynchronize();
-        error = cudaGetLastError();
-        if(error != cudaSuccess)
-        {
-            std::cerr << "CUDA synchronization error after cuBLAS sgemm: " << cudaGetErrorString(error) << std::endl;
-            exit(-1);
-        }
+        
 
         // Permute the result of matrix multiplication
         const int out_image_size = Height_out * Width_out;
@@ -302,22 +263,10 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             std::cout<<"CUDA error (permute kernel): "<<cudaGetErrorString(error)<<std::endl;
             exit(-1);
         }
-
-        cudaDeviceSynchronize();
-        error = cudaGetLastError();
-        if(error != cudaSuccess)
-        {
-            std::cerr << "CUDA synchronization error after permute kernel: " << cudaGetErrorString(error) << std::endl;
-            exit(-1);
-        }
     }
 
     // Destroy cuBLAS handle
-    cublasDestroy(handle);
-    if(status != CUBLAS_STATUS_SUCCESS){
-        std::cerr << "Failed to destroy cuBLAS handle" << std::endl;
-        exit(EXIT_FAILURE);
-    }
+    cublasDestroy(cublas_handle);
 
     cudaFree(matmul_output);
     cudaFree(unrolled_matrix);
