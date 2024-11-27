@@ -217,28 +217,28 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         float beta = 0.0f;
 
         // Dimensions for cuBLAS
-        int m = current_W_unroll;     // Number of rows of matrix B^T (columns of B)
-        int n = Map_out;              // Number of columns of matrix A^T (rows of A)
-        int k = Height_unrolled;      // Shared dimension
+        //int m = current_W_unroll;     // Number of rows of matrix B^T (columns of B)
+        //int n = Map_out;              // Number of columns of matrix A^T (rows of A)
+        //int k = Height_unrolled;      // Shared dimension
 
         // Perform matrix multiplication: matmul_output = device_mask * unrolled_matrix
         cublasStatus_t status = cublasSgemm(
             cublas_handle,
-            CUBLAS_OP_T,         // Transpose unrolled_matrix (B^T)
-            CUBLAS_OP_T,         // No transpose on device_mask (A)
-            m,                   // Number of rows in B^T
-            n,                   // Number of columns in A
-            k,                   // Shared dimension
+            CUBLAS_OP_T,         // Transpose unrolled_matrix (B)
+            CUBLAS_OP_T,         // Transpose device_mask (A)
+            current_W_unroll,    // m
+            Map_out,             // n
+            Height_unrolled,     // k
             &alpha,
-            unrolled_matrix,     // B^T
-            k,                   // Leading dimension of B^T
+            unrolled_matrix,     // B
+            Height_unrolled,     // ldb
             device_mask,         // A
-            k,                   // Leading dimension of A
+            Height_unrolled,     // lda
             &beta,
             matmul_output,       // C
-            m                    // Leading dimension of C
+            current_W_unroll     // ldc
         );
-
+        
         if (status != CUBLAS_STATUS_SUCCESS) {
             std::cerr << "cuBLAS sgemm failed" << std::endl;
             exit(1);
