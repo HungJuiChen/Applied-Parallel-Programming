@@ -173,7 +173,7 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 
     // Allocate memory for transposed mask
     float *device_mask_transposed;
-    size_t mask_size = Map_out * Channel * K * K * sizeof(float);
+    //size_t mask_size = Map_out * Channel * K * K * sizeof(float);
     cudaMalloc((void**)&device_mask_transposed, mask_size);
 
     // Define grid and block dimensions for transpose
@@ -187,7 +187,7 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
     );
 
     // Check for errors
-    cudaError_t error = cudaGetLastError();
+    //cudaError_t error = cudaGetLastError();
     if(error != cudaSuccess)
     {
         std::cout<<"CUDA error (mask transpose): "<<cudaGetErrorString(error)<<std::endl;
