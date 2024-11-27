@@ -226,6 +226,14 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             exit(-1);
         }
 
+        cudaDeviceSynchronize();
+        error = cudaGetLastError();
+        if(error != cudaSuccess)
+        {
+            std::cerr << "CUDA synchronization error after unrolling kernel: " << cudaGetErrorString(error) << std::endl;
+            exit(-1);
+        }
+
         // Prepare parameters for cuBLAS sgemm
         // A: device_mask (Map_out x (Channel * K * K)) - assuming row-major
         // B: unrolled_matrix ((Channel * K * K) x current_W_unroll) - assuming row-major
@@ -268,6 +276,14 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             exit(EXIT_FAILURE);
         }
 
+        cudaDeviceSynchronize();
+        error = cudaGetLastError();
+        if(error != cudaSuccess)
+        {
+            std::cerr << "CUDA synchronization error after cuBLAS sgemm: " << cudaGetErrorString(error) << std::endl;
+            exit(-1);
+        }
+
         // Permute the result of matrix multiplication
         const int out_image_size = Height_out * Width_out;
         dim3 permute_kernel_grid_dim((out_image_size - 1) / BLOCK_SIZE + 1, current_batch_size, 1);
@@ -286,10 +302,22 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             std::cout<<"CUDA error (permute kernel): "<<cudaGetErrorString(error)<<std::endl;
             exit(-1);
         }
+
+        cudaDeviceSynchronize();
+        error = cudaGetLastError();
+        if(error != cudaSuccess)
+        {
+            std::cerr << "CUDA synchronization error after permute kernel: " << cudaGetErrorString(error) << std::endl;
+            exit(-1);
+        }
     }
 
     // Destroy cuBLAS handle
     cublasDestroy(handle);
+    if(status != CUBLAS_STATUS_SUCCESS){
+        std::cerr << "Failed to destroy cuBLAS handle" << std::endl;
+        exit(EXIT_FAILURE);
+    }
 
     cudaFree(matmul_output);
     cudaFree(unrolled_matrix);
