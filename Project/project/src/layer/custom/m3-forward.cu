@@ -123,14 +123,6 @@ __global__ void matrix_permute_kernel(const float *input, float *output, int Map
     }
 }
 
-__global__ void transpose_matrix(const float *input, float *output, int rows, int cols) {
-    int x = blockIdx.x * blockDim.x + threadIdx.x; // column index
-    int y = blockIdx.y * blockDim.y + threadIdx.y; // row index
-
-    if (x < cols && y < rows) {
-        output[x * rows + y] = input[y * cols + x];
-    }
-}
 
 __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, const float *host_input, const float *host_mask, float **device_output_ptr, float **device_input_ptr, float **device_mask_ptr, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
@@ -170,33 +162,6 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
         std::cout<<"CUDA error (prolog): "<<cudaGetErrorString(error)<<std::endl;
         exit(-1);
     }
-
-    // Allocate memory for transposed mask
-    float *device_mask_transposed;
-    //size_t mask_size = Map_out * Channel * K * K * sizeof(float);
-    cudaMalloc((void**)&device_mask_transposed, mask_size);
-
-    // Define grid and block dimensions for transpose
-    dim3 blockDim_transpose(16, 16);
-    dim3 gridDim_transpose((Channel * K * K + blockDim_transpose.x - 1) / blockDim_transpose.x,
-                           (Map_out + blockDim_transpose.y - 1) / blockDim_transpose.y);
-
-    // Launch transpose kernel
-    transpose_matrix<<<gridDim_transpose, blockDim_transpose>>>(
-        *device_mask_ptr, device_mask_transposed, Map_out, Channel * K * K
-    );
-
-    // Check for errors
-    //cudaError_t error = cudaGetLastError();
-    if(error != cudaSuccess)
-    {
-        std::cout<<"CUDA error (mask transpose): "<<cudaGetErrorString(error)<<std::endl;
-        exit(-1);
-    }
-
-    // Free the original mask and update the device_mask_ptr to point to the transposed mask
-    cudaFree(*device_mask_ptr);
-    *device_mask_ptr = device_mask_transposed;
 
 }
 
@@ -272,10 +237,11 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         // Thus, set transa = CUBLAS_OP_T, transb = CUBLAS_OP_T
         // and swap A and B in the parameters
 
-        // Set the GEMM parameters without transposing
+         // Prepare parameters for cuBLAS sgemm
         const float alpha = 1.0f;
         const float beta = 0.0f;
 
+        // Dimensions for cuBLAS GEMM
         int m = Map_out;
         int n = current_W_unroll;
         int k = Channel * K * K;
@@ -284,22 +250,21 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         // A: device_mask (Map_out x k), treated as A^T (k x Map_out)
         // B: unrolled_matrix (k x n), treated as B^T (n x k)
         // C: matmul_output (Map_out x n), treated as C^T (n x Map_out)
-
         status = cublasSgemm(handle,
-                            CUBLAS_OP_N, // No transpose
-                            CUBLAS_OP_N, // No transpose
-                            n, // Number of columns of B and C
-                            m, // Number of rows of A and C
-                            k, // Number of columns of A and rows of B
-                            &alpha,
-                            unrolled_matrix, n, // B: unrolled_matrix in row-major (treated as column-major)
-                            device_mask, k,      // A: device_mask_transposed in column-major
-                            &beta,
-                            matmul_output, n     // C: matmul_output in column-major
+                             CUBLAS_OP_T, // transa
+                             CUBLAS_OP_T, // transb
+                             n,           // m: columns of B^T
+                             m,           // n: columns of A^T
+                             k,           // k: shared dimension
+                             &alpha,
+                             device_mask, k,     // A: device_mask^T, lda = k (Correct)
+                             unrolled_matrix, n, // B: unrolled_matrix^T, ldb = n (Correct)
+                             &beta,
+                             matmul_output, n    // C: matmul_output^T, ldc = n (Already Correct)
         );
 
         if (status != CUBLAS_STATUS_SUCCESS) {
-            std::cerr << "cuBLAS sgemm failed" << std::endl;
+            std::cerr << "cuBLAS sgemm failed with status: " << status << std::endl;
             exit(EXIT_FAILURE);
         }
 
