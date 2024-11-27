@@ -225,7 +225,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         cublasStatus_t status = cublasSgemm(
             cublas_handle,
             CUBLAS_OP_T,         // Transpose unrolled_matrix (B^T)
-            CUBLAS_OP_N,         // No transpose on device_mask (A)
+            CUBLAS_OP_T,         // No transpose on device_mask (A)
             m,                   // Number of rows in B^T
             n,                   // Number of columns in A
             k,                   // Shared dimension
