@@ -224,8 +224,8 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         // Perform matrix multiplication: matmul_output = device_mask * unrolled_matrix
         cublasStatus_t status = cublasSgemm(
             cublas_handle,
-            CUBLAS_OP_T,         // Transpose unrolled_matrix (B)
-            CUBLAS_OP_T,         // Transpose device_mask (A)
+            CUBLAS_OP_N,         // Transpose unrolled_matrix (B)
+            CUBLAS_OP_N,         // Transpose device_mask (A)
             current_W_unroll,    // m
             Map_out,             // n
             Height_unrolled,     // k
@@ -238,7 +238,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             matmul_output,       // C
             current_W_unroll     // ldc
         );
-        
+
         if (status != CUBLAS_STATUS_SUCCESS) {
             std::cerr << "cuBLAS sgemm failed" << std::endl;
             exit(1);
