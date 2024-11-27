@@ -123,6 +123,15 @@ __global__ void matrix_permute_kernel(const float *input, float *output, int Map
     }
 }
 
+__global__ void transpose_matrix(const float *input, float *output, int rows, int cols) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x; // column index
+    int y = blockIdx.y * blockDim.y + threadIdx.y; // row index
+
+    if (x < cols && y < rows) {
+        output[x * rows + y] = input[y * cols + x];
+    }
+}
+
 __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, const float *host_input, const float *host_mask, float **device_output_ptr, float **device_input_ptr, float **device_mask_ptr, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
     // TODO: Allocate memory and copy over the relevant data structures to the GPU
@@ -162,6 +171,33 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
         exit(-1);
     }
 
+    // Allocate memory for transposed mask
+    float *device_mask_transposed;
+    size_t mask_size = Map_out * Channel * K * K * sizeof(float);
+    cudaMalloc((void**)&device_mask_transposed, mask_size);
+
+    // Define grid and block dimensions for transpose
+    dim3 blockDim_transpose(16, 16);
+    dim3 gridDim_transpose((Channel * K * K + blockDim_transpose.x - 1) / blockDim_transpose.x,
+                           (Map_out + blockDim_transpose.y - 1) / blockDim_transpose.y);
+
+    // Launch transpose kernel
+    transpose_matrix<<<gridDim_transpose, blockDim_transpose>>>(
+        *device_mask_ptr, device_mask_transposed, Map_out, Channel * K * K
+    );
+
+    // Check for errors
+    cudaError_t error = cudaGetLastError();
+    if(error != cudaSuccess)
+    {
+        std::cout<<"CUDA error (mask transpose): "<<cudaGetErrorString(error)<<std::endl;
+        exit(-1);
+    }
+
+    // Free the original mask and update the device_mask_ptr to point to the transposed mask
+    cudaFree(*device_mask_ptr);
+    *device_mask_ptr = device_mask_transposed;
+
 }
 
 
@@ -190,8 +226,8 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     cudaMalloc((void**)&unrolled_matrix, max_unroll_size);
 
     size_t max_matmul_size = Map_out * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
-    
     cudaMalloc((void**)&matmul_output, max_matmul_size);
+    
     // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
     
     // Iterate over each mini-batch
@@ -236,25 +272,30 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         // Thus, set transa = CUBLAS_OP_T, transb = CUBLAS_OP_T
         // and swap A and B in the parameters
 
+        // Set the GEMM parameters without transposing
         const float alpha = 1.0f;
         const float beta = 0.0f;
 
-        // Dimensions for transposed multiplication
-        int lda = Map_out;
-        int ldb = Channel * K * K;
-        int ldc = Map_out;
+        int m = Map_out;
+        int n = current_W_unroll;
+        int k = Channel * K * K;
+
+        // Perform C = A * B using cuBLAS
+        // A: device_mask (Map_out x k), treated as A^T (k x Map_out)
+        // B: unrolled_matrix (k x n), treated as B^T (n x k)
+        // C: matmul_output (Map_out x n), treated as C^T (n x Map_out)
 
         status = cublasSgemm(handle,
-                             CUBLAS_OP_T, // transa
-                             CUBLAS_OP_T, // transb
-                             current_W_unroll, // m: columns of B^T (rows of B)
-                             Map_out,          // n: columns of A^T (rows of A)
-                             Channel * K * K,  // k: rows of B^T / columns of A^T
-                             &alpha,
-                             device_mask, lda,     // A: device_mask^T
-                             unrolled_matrix, ldb, // B: unrolled_matrix^T
-                             &beta,
-                             matmul_output, ldc    // C: matmul_output^T
+                            CUBLAS_OP_N, // No transpose
+                            CUBLAS_OP_N, // No transpose
+                            n, // Number of columns of B and C
+                            m, // Number of rows of A and C
+                            k, // Number of columns of A and rows of B
+                            &alpha,
+                            unrolled_matrix, n, // B: unrolled_matrix in row-major (treated as column-major)
+                            device_mask, k,      // A: device_mask_transposed in column-major
+                            &beta,
+                            matmul_output, n     // C: matmul_output in column-major
         );
 
         if (status != CUBLAS_STATUS_SUCCESS) {
