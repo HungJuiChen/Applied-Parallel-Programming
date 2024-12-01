@@ -174,12 +174,12 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         // TODO: Set the kernel dimensions and call the matmul kernel
 
         // Set up dimensions
-        int numARows = Map_out;
-        int numACols = Channel * K * K;
-        int numBRows = numACols;  // Because A_cols must equal B_rows
-        int numBCols = current_W_unroll;
-        int numCRows = numARows;
-        int numCCols = numBCols;
+        // int numARows = Map_out;
+        // int numACols = Channel * K * K;
+        // int numBRows = numACols;  // Because A_cols must equal B_rows
+        // int numBCols = current_W_unroll;
+        // int numCRows = numARows;
+        // int numCCols = numBCols;
 
         // Set up leading dimensions
         // int lda = numARows;
@@ -195,14 +195,14 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             cublasHandle,
             CUBLAS_OP_N,  // Operation on A: No transpose
             CUBLAS_OP_N,  // Operation on B: No transpose
-            numCCols,
-            numCRows,
-            numACols,
+            current_W_unroll,
+            Map_out,
+            Height_unrolled,
             &alpha,
-            unrolled_matrix, numCCols,
-            device_mask, numACols,
+            unrolled_matrix, current_W_unroll,
+            device_mask, Height_unrolled,
             &beta,
-            matmul_output, numCCols
+            matmul_output, current_W_unroll
         );
 
         if (status != CUBLAS_STATUS_SUCCESS) {
