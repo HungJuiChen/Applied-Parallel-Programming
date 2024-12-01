@@ -199,8 +199,8 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             Map_out,
             Height_unrolled,
             &alpha,
-            unrolled_matrix, current_W_unroll,
             device_mask, Height_unrolled,
+            unrolled_matrix, current_W_unroll,
             &beta,
             matmul_output, current_W_unroll
         );
