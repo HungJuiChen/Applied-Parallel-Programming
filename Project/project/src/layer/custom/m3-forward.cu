@@ -132,9 +132,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     size_t max_matmul_size = Map_out * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
     cudaMalloc((void**)&matmul_output, max_matmul_size);
 
-    // Initialize cuBLAS handle
-    cublasHandle_t cublasHandle;
-    cublasCreate(&cublasHandle);
+    
 
     // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
     
@@ -169,6 +167,10 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             exit(-1);
         }
 
+        // Initialize cuBLAS handle
+        cublasHandle_t cublasHandle;
+        cublasCreate(&cublasHandle);  
+
         // TODO: Set the kernel dimensions and call the matmul kernel
 
         // Set up dimensions
@@ -193,20 +195,23 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             cublasHandle,
             CUBLAS_OP_N,  // Operation on A: No transpose
             CUBLAS_OP_N,  // Operation on B: No transpose
-            numBCols,
-            numARows,
+            numCCols,
+            numCRows,
             numACols,
             &alpha,
-            unrolled_matrix, numBCols,
+            unrolled_matrix, numCCols,
             device_mask, numACols,
             &beta,
-            matmul_output, numBCols
+            matmul_output, numCCols
         );
 
         if (status != CUBLAS_STATUS_SUCCESS) {
             std::cerr << "cuBLAS sgemm failed" << std::endl;
             exit(1);
         }
+
+        // Destroy cuBLAS handle
+        cublasDestroy(cublasHandle);
         
 
         // Permute the result of matrix multiplication
@@ -229,8 +234,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         }
     }
 
-    // Destroy cuBLAS handle
-    cublasDestroy(cublasHandle);
+    
 
     cudaFree(matmul_output);
     cudaFree(unrolled_matrix);
