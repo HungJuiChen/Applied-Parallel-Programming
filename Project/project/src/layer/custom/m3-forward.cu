@@ -66,47 +66,6 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     }
 }
 
-// Tiled matrix multiplication kernel. Computes C = AB
-// You don't need to modify this kernel.
-__global__ void matrixMultiplyShared(const float *A, const float *B, float *C,
-                                     int numARows, int numAColumns,
-                                     int numBRows, int numBColumns,
-                                     int numCRows, int numCColumns)
-{
-    __shared__ float tileA[TILE_WIDTH][TILE_WIDTH];
-    __shared__ float tileB[TILE_WIDTH][TILE_WIDTH];
-
-    int by = blockIdx.y, bx = blockIdx.x, ty = threadIdx.y, tx = threadIdx.x;
-
-    int row = by * TILE_WIDTH + ty, col = bx * TILE_WIDTH + tx;
-    float val = 0;
-
-    for (int tileId = 0; tileId < (numAColumns - 1) / TILE_WIDTH + 1; tileId++) {
-        if (row < numARows && tileId * TILE_WIDTH + tx < numAColumns) {
-            tileA[ty][tx] = A[(size_t) row * numAColumns + tileId * TILE_WIDTH + tx];
-        } else {
-            tileA[ty][tx] = 0;
-        }
-        if (col < numBColumns && tileId * TILE_WIDTH + ty < numBRows) {
-            tileB[ty][tx] = B[((size_t) tileId * TILE_WIDTH + ty) * numBColumns + col];
-        } else {
-            tileB[ty][tx] = 0;
-        }
-        __syncthreads();
-
-        if (row < numCRows && col < numCColumns) {
-            for (int i = 0; i < TILE_WIDTH; i++) {
-                val += tileA[ty][i] * tileB[i][tx];
-            }
-        }
-        __syncthreads();
-    }
-
-    if (row < numCRows && col < numCColumns) {
-        C[row * numCColumns + col] = val;
-    }
-}
-
 // Permutes the matmul result.
 // The output feature map after matmul is of shape Map_out x Batch x Height_out x Width_out,
 // and we need to permute it into Batch x Map_out x Height_out x Width_out.
@@ -212,31 +171,36 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
 
         // TODO: Set the kernel dimensions and call the matmul kernel
 
-        // Use cuBLAS for matrix multiplication
-        float alpha = 1.0f;
-        float beta = 0.0f;
+        // Set up dimensions
+        int numARows = Map_out;
+        int numACols = Channel * K * K;
+        int numBRows = numACols;  // Because A_cols must equal B_rows
+        int numBCols = current_W_unroll;
+        int numCRows = numARows;
+        int numCCols = numBCols;
 
-        // Dimensions for cuBLAS
-        //int m = current_W_unroll;     // Number of rows of matrix B^T (columns of B)
-        //int n = Map_out;              // Number of columns of matrix A^T (rows of A)
-        //int k = Height_unrolled;      // Shared dimension
+        // Set up leading dimensions
+        int lda = numARows;
+        int ldb = numBRows;
+        int ldc = numCRows;
 
-        // Perform matrix multiplication: matmul_output = device_mask * unrolled_matrix
+        // Set alpha and beta for the cuBLAS operation
+        const float alpha = 1.0f;
+        const float beta = 0.0f;
+
+        // Perform the matrix multiplication using cuBLAS
         cublasStatus_t status = cublasSgemm(
-            cublas_handle,
-            CUBLAS_OP_T,         // Transpose unrolled_matrix (B)
-            CUBLAS_OP_T,         // Transpose device_mask (A)
-            current_W_unroll,    // m
-            Map_out,             // n
-            Height_unrolled,     // k
+            cublasHandle,
+            CUBLAS_OP_N,  // Operation on A: No transpose
+            CUBLAS_OP_N,  // Operation on B: No transpose
+            numCRows,
+            numCCols,
+            numACols,
             &alpha,
-            unrolled_matrix,     // B
-            Height_unrolled,     // ldb
-            device_mask,         // A
-            Height_unrolled,     // lda
+            device_mask, lda,
+            unrolled_matrix, ldb,
             &beta,
-            matmul_output,       // C
-            current_W_unroll     // ldc
+            matmul_output, ldc
         );
 
         if (status != CUBLAS_STATUS_SUCCESS) {
