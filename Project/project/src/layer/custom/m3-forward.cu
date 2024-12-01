@@ -197,10 +197,10 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             numCCols,
             numACols,
             &alpha,
-            device_mask, lda,
-            unrolled_matrix, ldb,
+            device_mask, numCRows,
+            unrolled_matrix, numACols,
             &beta,
-            matmul_output, ldc
+            matmul_output, numCRows
         );
 
         if (status != CUBLAS_STATUS_SUCCESS) {
