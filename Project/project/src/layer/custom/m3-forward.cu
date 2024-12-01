@@ -133,8 +133,8 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     cudaMalloc((void**)&matmul_output, max_matmul_size);
 
     // Initialize cuBLAS handle
-    cublasHandle_t cublashandle;
-    cublasCreate(&cublas_handle);
+    cublasHandle_t cublasHandle;
+    cublasCreate(&cublasHandle);
 
     // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
     
