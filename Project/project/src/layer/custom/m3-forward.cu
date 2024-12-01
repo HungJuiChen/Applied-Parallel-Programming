@@ -230,7 +230,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     }
 
     // Destroy cuBLAS handle
-    cublasDestroy(cublas_handle);
+    cublasDestroy(cublasHandle);
 
     cudaFree(matmul_output);
     cudaFree(unrolled_matrix);
