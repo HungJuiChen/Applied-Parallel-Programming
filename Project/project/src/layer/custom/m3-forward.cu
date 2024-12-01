@@ -180,9 +180,9 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         int numCCols = numBCols;
 
         // Set up leading dimensions
-        int lda = numARows;
-        int ldb = numBRows;
-        int ldc = numCRows;
+        // int lda = numARows;
+        // int ldb = numBRows;
+        // int ldc = numCRows;
 
         // Set alpha and beta for the cuBLAS operation
         const float alpha = 1.0f;
@@ -193,12 +193,12 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
             cublasHandle,
             CUBLAS_OP_N,  // Operation on A: No transpose
             CUBLAS_OP_N,  // Operation on B: No transpose
-            numCRows,
-            numCCols,
+            numBCols,
+            numARows,
             numACols,
             &alpha,
-            device_mask, numACols,
             unrolled_matrix, numBCols,
+            device_mask, numACols,
             &beta,
             matmul_output, numBCols
         );
