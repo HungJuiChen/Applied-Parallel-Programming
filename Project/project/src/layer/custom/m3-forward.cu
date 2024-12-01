@@ -173,19 +173,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
 
         // TODO: Set the kernel dimensions and call the matmul kernel
 
-        // Set up dimensions
-        // int numARows = Map_out;
-        // int numACols = Channel * K * K;
-        // int numBRows = numACols;  // Because A_cols must equal B_rows
-        // int numBCols = current_W_unroll;
-        // int numCRows = numARows;
-        // int numCCols = numBCols;
-
-        // Set up leading dimensions
-        // int lda = numARows;
-        // int ldb = numBRows;
-        // int ldc = numCRows;
-
         // Set alpha and beta for the cuBLAS operation
         const float alpha = 1.0f;
         const float beta = 0.0f;
