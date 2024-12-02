@@ -77,7 +77,7 @@ __global__ void matrix_permute_kernel(const float *input, float *output, int Map
     if (x < image_size) {
         for (int m = 0; m < Map_out; m++) {
             output[b * Map_out * image_size + m * image_size + x] =
-                     input[m * image_size + x];
+                    input[m * Batch * image_size + b * image_size + x];
         }
     }
 }
