@@ -29,7 +29,7 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     const int W_unroll = Batch * Height_out * Width_out;
 
     // Calculate h_unroll and w_unroll using 2D grid and block indices
-    int h_unroll = blockIdx.y * blockDim.y + threadIdx.y;
+    //int h_unroll = blockIdx.y * blockDim.y + threadIdx.y;
     int w_unroll = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (h_unroll < H_unroll && w_unroll < W_unroll) {
@@ -50,18 +50,25 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
         // An example use of these macros:
         // float a = in_4d(0,0,0,0)
 
-        #define in_4d(i3, i2, i1, i0) input[(i3) * (Channel * Height * Width) + (i2) * (Height * Width) + (i1) * (Width) + i0]
-        #define out_2d(i1, i0) output[(i1) * W_unroll + (i0)]
+        // Unroll over h_unroll
+        #pragma unroll
+        for (int c = 0; c < Channel; ++c) {
+            for (int p = 0; p < K; ++p) {
+                for (int q = 0; q < K; ++q) {
+                    int h_unroll = c * K * K + p * K + q;
+                    int input_row = h + p;
+                    int input_col = w + q;
 
-        // TODO: Insert your input matrix unrolling kernel code here
-        if (input_row < Height && input_col < Width) {
-            out_2d(h_unroll, w_unroll) = in_4d(b, c, input_row, input_col);
-        } else {
-            out_2d(h_unroll, w_unroll) = 0.0f;
+                    float val = 0.0f;
+                    if (input_row < Height && input_col < Width) {
+                        val = input[b * Channel * Height * Width +
+                                    c * Height * Width +
+                                    input_row * Width + input_col];
+                    }
+                    output[h_unroll * W_unroll + w_unroll] = val;
+                }
+            }
         }
-
-        #undef in_4d
-        #undef out_2d
     }
 }
 
