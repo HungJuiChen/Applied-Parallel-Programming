@@ -24,55 +24,52 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     */
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-   
+
     const int H_unroll = Channel * K * K;
     const int W_unroll = Batch * Height_out * Width_out;
 
     // Calculate h_unroll and w_unroll using 2D grid and block indices
-    int h_unroll = blockIdx.y * blockDim.y + threadIdx.y;
+    //int h_unroll = blockIdx.y * blockDim.y + threadIdx.y;
     int w_unroll = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // Define the unroll factor
-    const int UNROLL_FACTOR = 2;
+    if (h_unroll < H_unroll && w_unroll < W_unroll) {
+        int c = h_unroll / (K * K);
+        int p = (h_unroll % (K * K)) / K;
+        int q = (h_unroll % (K * K)) % K;
 
-    // Calculate the maximum number of iterations based on the unroll factor
-    int max_iterations = (W_unroll + UNROLL_FACTOR - 1) / UNROLL_FACTOR;
+        int b = w_unroll / (Height_out * Width_out);
+        int remainder = w_unroll % (Height_out * Width_out);
+        int h = remainder / Width_out;
+        int w = remainder % Width_out;
 
-    #define in_4d(i3, i2, i1, i0) input[(i3) * (Channel * Height * Width) + (i2) * (Height * Width) + (i1) * (Width) + i0]
-    #define out_2d(i1, i0) output[(i1) * W_unroll + (i0)]
+        int input_row = h + p;
+        int input_col = w + q;
+        
+    
+        // We have some nice #defs for you below to simplify indexing. Feel free to use them, or create your own.
+        // An example use of these macros:
+        // float a = in_4d(0,0,0,0)
 
-    for (int iter = 0; iter < max_iterations; iter++) {
-        // Calculate the current w_unroll with unroll offset
-        int current_w_unroll = iter * UNROLL_FACTOR + w_unroll;
-
-        // Process multiple elements per thread
+        // Unroll over h_unroll
         #pragma unroll
-        for (int offset = 0; offset < UNROLL_FACTOR; offset++) {
-            int idx = current_w_unroll + offset;
-            if (h_unroll < H_unroll && idx < W_unroll) {
-                int c = h_unroll / (K * K);
-                int p = (h_unroll % (K * K)) / K;
-                int q = (h_unroll % (K * K)) % K;
+        for (int c = 0; c < Channel; ++c) {
+            for (int p = 0; p < K; ++p) {
+                for (int q = 0; q < K; ++q) {
+                    int h_unroll = c * K * K + p * K + q;
+                    int input_row = h + p;
+                    int input_col = w + q;
 
-                int b = idx / (Height_out * Width_out);
-                int remainder = idx % (Height_out * Width_out);
-                int h = remainder / Width_out;
-                int w = remainder % Width_out;
-
-                int input_row = h + p;
-                int input_col = w + q;
-
-                if (input_row < Height && input_col < Width) {
-                    out_2d(h_unroll, idx) = in_4d(b, c, input_row, input_col);
-                } else {
-                    out_2d(h_unroll, idx) = 0.0f;
+                    float val = 0.0f;
+                    if (input_row < Height && input_col < Width) {
+                        val = input[b * Channel * Height * Width +
+                                    c * Height * Width +
+                                    input_row * Width + input_col];
+                    }
+                    output[h_unroll * W_unroll + w_unroll] = val;
                 }
             }
         }
     }
-
-    #undef in_4d
-    #undef out_2d
 }
 
 // Tiled matrix multiplication kernel. Computes C = AB
@@ -104,9 +101,11 @@ __global__ void matrixMultiplyShared(const float *A, const float *B, float *C,
         __syncthreads();
 
         if (row < numCRows && col < numCColumns) {
+            // Unrolled loop
+            #pragma unroll
             for (int i = 0; i < TILE_WIDTH; i++) {
                 val += tileA[ty][i] * tileB[i][tx];
-            }
+            }  
         }
         __syncthreads();
     }
@@ -125,6 +124,8 @@ __global__ void matrix_permute_kernel(const float *input, float *output, int Map
     int b = blockIdx.y;
     int x = blockIdx.x * BLOCK_SIZE + threadIdx.x;
     if (x < image_size) {
+        // Unroll over Map_out if it's small
+        #pragma unroll
         for (int m = 0; m < Map_out; m++) {
             output[b * Map_out * image_size + m * image_size + x] =
                     input[m * Batch * image_size + b * image_size + x];
@@ -135,17 +136,6 @@ __global__ void matrix_permute_kernel(const float *input, float *output, int Map
 __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, const float *host_input, const float *host_mask, float **device_output_ptr, float **device_input_ptr, float **device_mask_ptr, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
     // TODO: Allocate memory and copy over the relevant data structures to the GPU
-
-    // We pass double pointers for you to initialize the relevant device pointers,
-    //  which are passed to the other two functions.
-
-    // Useful snippet for error checking
-    // cudaError_t error = cudaGetLastError();
-    // if(error != cudaSuccess)
-    // {
-    //     std::cout<<"CUDA error: "<<cudaGetErrorString(error)<<std::endl;
-    //     exit(-1);
-    // }
 
     // Allocate device memory for input
     size_t input_size = Batch * Channel * Height * Width * sizeof(float);
@@ -191,7 +181,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     cudaMalloc((void**)&unrolled_matrix, max_unroll_size);
 
     size_t max_matmul_size = Map_out * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
-    
     cudaMalloc((void**)&matmul_output, max_matmul_size);
     // TODO: Set the kernel dimensions and call the matrix unrolling kernel.
     
