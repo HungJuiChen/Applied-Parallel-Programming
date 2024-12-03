@@ -98,7 +98,6 @@ __global__ void matrixMultiplySharedOptimized(const float *A, const float *B, fl
             float regA[REG_TILE_SIZE];
             float regB[REG_TILE_SIZE];
 
-            #pragma unroll
             for (int i = 0; i < REG_TILE_SIZE; ++i) {
                 int idx = k + i;
                 if (idx < TILE_WIDTH) {
@@ -110,7 +109,6 @@ __global__ void matrixMultiplySharedOptimized(const float *A, const float *B, fl
                 }
             }
 
-            #pragma unroll
             for (int i = 0; i < REG_TILE_SIZE; ++i) {
                 value += regA[i] * regB[i];
             }
