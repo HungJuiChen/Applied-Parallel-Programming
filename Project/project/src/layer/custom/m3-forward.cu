@@ -124,6 +124,8 @@ __global__ void matrix_permute_kernel(const float *input, float *output, int Map
     int b = blockIdx.y;
     int x = blockIdx.x * BLOCK_SIZE + threadIdx.x;
     if (x < image_size) {
+        // Unroll over Map_out if it's small
+        #pragma unroll
         for (int m = 0; m < Map_out; m++) {
             output[b * Map_out * image_size + m * image_size + x] =
                     input[m * Batch * image_size + b * image_size + x];
