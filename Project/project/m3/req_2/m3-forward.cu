@@ -123,7 +123,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
 {
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-    const int H_unroll = Channel * K * K;
 
     // Determine the number of mini-batches
     int num_batches = (Batch + MAX_BATCH_SIZE - 1) / MAX_BATCH_SIZE;
