@@ -152,12 +152,7 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
     const int Width_out = Width - K + 1;
     size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
     cudaMalloc((void**) device_output_ptr, output_size);
-
-    // Allocate device memory for mask
-    // size_t mask_size = Map_out * Channel * K * K * sizeof(float);
-    // cudaMalloc((void**) device_mask_ptr, mask_size);
-    // cudaMemcpy(*device_mask_ptr, host_mask, mask_size, cudaMemcpyHostToDevice);
-
+    
     // Copy mask to constant memory
     size_t mask_size = Map_out * Channel * K * K * sizeof(float);
     if (mask_size > MAX_MASK_SIZE * sizeof(float)) {
@@ -293,7 +288,6 @@ __host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *d
     // TODO: Free device memory
     cudaFree(device_output);
     cudaFree(device_input);
-    //cudaFree(device_mask);
 
     cudaError_t error = cudaGetLastError();
     if(error != cudaSuccess)
