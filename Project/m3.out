@@ -2,7 +2,7 @@ Test batch size: 10000
 Loading fashion-mnist data...Done
 Loading model...Done
 Conv-GPU==
-==PROF== Connected to process 3125863 (/u/chen30/ece408git/Project/m3)
+==PROF== Connected to process 2918518 (/u/chen30/ece408git/Project/m3)
 ==PROF== Profiling "prefn_marker_kernel()" - 0: 0%....50%....100% - 34 passes
 ==PROF== Profiling "matrix_unrolling_kernel" - 1: 0%....50%....100% - 34 passes
 ==PROF== Profiling "matrixMultiplyShared" - 2: 0%....50%....100% - 34 passes
@@ -35,8 +35,8 @@ Conv-GPU==
 ==PROF== Profiling "matrixMultiplyShared" - 29: 0%....50%....100% - 34 passes
 ==PROF== Profiling "matrix_permute_kernel" - 30: 0%....50%....100% - 34 passes
 ==PROF== Profiling "do_not_remove_this_kernel()" - 31: 0%....50%....100% - 34 passes
-Layer Time: 54397.8 ms
-Op Time: 54227.8 ms
+Layer Time: 55841.7 ms
+Op Time: 55671.1 ms
 Conv-GPU==
 ==PROF== Profiling "prefn_marker_kernel()" - 32: 0%....50%....100% - 34 passes
 ==PROF== Profiling "matrix_unrolling_kernel" - 33: 0%....50%....100% - 34 passes
@@ -70,10 +70,10 @@ Conv-GPU==
 ==PROF== Profiling "matrixMultiplyShared" - 61: 0%....50%....100% - 34 passes
 ==PROF== Profiling "matrix_permute_kernel" - 62: 0%....50%....100% - 34 passes
 ==PROF== Profiling "do_not_remove_this_kernel()" - 63: 0%....50%....100% - 34 passes
-Layer Time: 55990.8 ms
-Op Time: 55864.9 ms
+Layer Time: 55632.8 ms
+Op Time: 55508 ms
 
 Test Accuracy: 0.8714
 
-==PROF== Disconnected from process 3125863
+==PROF== Disconnected from process 2918518
 ==PROF== Report: /u/chen30/ece408git/Project/analysis_file.ncu-rep
