@@ -29,14 +29,9 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     const int W_unroll = Batch * Height_out * Width_out;
 
     // Calculate h_unroll and w_unroll using 2D grid and block indices
-    //int h_unroll = blockIdx.y * blockDim.y + threadIdx.y;
     int w_unroll = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (h_unroll < H_unroll && w_unroll < W_unroll) {
-        int c = h_unroll / (K * K);
-        int p = (h_unroll % (K * K)) / K;
-        int q = (h_unroll % (K * K)) % K;
-
+    if (w_unroll < W_unroll) {
         int b = w_unroll / (Height_out * Width_out);
         int remainder = w_unroll % (Height_out * Width_out);
         int h = remainder / Width_out;
