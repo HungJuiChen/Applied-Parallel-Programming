@@ -2,78 +2,148 @@ Test batch size: 10000
 Loading fashion-mnist data...Done
 Loading model...Done
 Conv-GPU==
-==PROF== Connected to process 2382211 (/u/chen30/ece408git/Project/m3)
+==PROF== Connected to process 3774912 (/u/chen30/ece408git/Project/m3)
 ==PROF== Profiling "prefn_marker_kernel()" - 0: 0%....50%....100% - 34 passes
 ==PROF== Profiling "matrix_unrolling_kernel" - 1: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 2: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 3: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 4: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 5: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 6: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 7: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 8: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 2: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 3: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 4: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 5: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 6: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 7: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 8: 0%....50%....100% - 34 passes
 ==PROF== Profiling "matrix_permute_kernel" - 9: 0%....50%....100% - 34 passes
 ==PROF== Profiling "matrix_unrolling_kernel" - 10: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 11: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 12: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 13: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 14: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 15: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 16: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 17: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 11: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 12: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 13: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 14: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 15: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 16: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 17: 0%....50%....100% - 34 passes
 ==PROF== Profiling "matrix_permute_kernel" - 18: 0%....50%....100% - 34 passes
 ==PROF== Profiling "matrix_unrolling_kernel" - 19: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 20: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 21: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 22: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 23: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 24: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 25: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 26: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 20: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 21: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 22: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 23: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 24: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 25: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 26: 0%....50%....100% - 34 passes
 ==PROF== Profiling "matrix_permute_kernel" - 27: 0%....50%....100% - 34 passes
 ==PROF== Profiling "matrix_unrolling_kernel" - 28: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 29: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 30: 0%....50%....100% - 34 passes
-==PROF== Profiling "do_not_remove_this_kernel()" - 31: 0%....50%....100% - 34 passes
-Layer Time: 174669 ms
-Op Time: 174486 ms
+==PROF== Profiling "gemmSN_NN_kernel" - 29: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 30: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 31: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 32: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 33: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 34: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 35: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 36: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 37: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 38: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 39: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 40: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 41: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 42: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 43: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 44: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 45: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 46: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 47: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 48: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 49: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 50: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 51: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 52: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 53: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 54: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 55: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 56: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 57: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 58: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 59: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 60: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 61: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 62: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 63: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 64: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 65: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 66: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 67: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 68: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 69: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 70: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 71: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 72: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 73: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 74: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 75: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 76: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 77: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 78: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 79: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 80: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 81: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 82: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 83: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 84: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 85: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 86: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 87: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 88: 0%....50%....100% - 34 passes
+==PROF== Profiling "gemmSN_NN_kernel" - 89: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 90: 0%....50%....100% - 34 passes
+==PROF== Profiling "do_not_remove_this_kernel()" - 91: 0%....50%....100% - 34 passes
+Layer Time: 121246 ms
+Op Time: 121066 ms
 Conv-GPU==
-==PROF== Profiling "prefn_marker_kernel()" - 32: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 33: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 34: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 35: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 36: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 37: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 38: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 39: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 40: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 41: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 42: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 43: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 44: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 45: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 46: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 47: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 48: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 49: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 50: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 51: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 52: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 53: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 54: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 55: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 56: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 57: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 58: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 59: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 60: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplyShared" - 61: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 62: 0%....50%....100% - 34 passes
-==PROF== Profiling "do_not_remove_this_kernel()" - 63: 0%....50%....100% - 34 passes
-Layer Time: 344109 ms
-Op Time: 343982 ms
+==PROF== Profiling "prefn_marker_kernel()" - 92: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 93: 0%....50%....100% - 34 passes
+==PROF== Profiling "Kernel" - 94: 0%....50%....100% - 34 passes
+==PROF== Profiling "ampere_sgemm_128x32_nn" - 95: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 96: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 97: 0%....50%....100% - 34 passes
+==PROF== Profiling "Kernel" - 98: 0%....50%....100% - 34 passes
+==PROF== Profiling "ampere_sgemm_128x32_nn" - 99: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 100: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 101: 0%....50%....100% - 34 passes
+==PROF== Profiling "Kernel" - 102: 0%....50%....100% - 34 passes
+==PROF== Profiling "ampere_sgemm_128x32_nn" - 103: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 104: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 105: 0%....50%....100% - 34 passes
+==PROF== Profiling "Kernel" - 106: 0%....50%....100% - 34 passes
+==PROF== Profiling "ampere_sgemm_128x32_nn" - 107: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 108: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 109: 0%....50%....100% - 34 passes
+==PROF== Profiling "Kernel" - 110: 0%....50%....100% - 34 passes
+==PROF== Profiling "ampere_sgemm_128x32_nn" - 111: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 112: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 113: 0%....50%....100% - 34 passes
+==PROF== Profiling "Kernel" - 114: 0%....50%....100% - 34 passes
+==PROF== Profiling "ampere_sgemm_128x32_nn" - 115: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 116: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 117: 0%....50%....100% - 34 passes
+==PROF== Profiling "Kernel" - 118: 0%....50%....100% - 34 passes
+==PROF== Profiling "ampere_sgemm_128x32_nn" - 119: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 120: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 121: 0%....50%....100% - 34 passes
+==PROF== Profiling "Kernel" - 122: 0%....50%....100% - 34 passes
+==PROF== Profiling "ampere_sgemm_128x32_nn" - 123: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 124: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 125: 0%....50%....100% - 34 passes
+==PROF== Profiling "Kernel" - 126: 0%....50%....100% - 34 passes
+==PROF== Profiling "ampere_sgemm_128x32_nn" - 127: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 128: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_unrolling_kernel" - 129: 0%....50%....100% - 34 passes
+==PROF== Profiling "Kernel" - 130: 0%....50%....100% - 34 passes
+==PROF== Profiling "ampere_sgemm_128x32_nn" - 131: 0%....50%....100% - 34 passes
+==PROF== Profiling "matrix_permute_kernel" - 132: 0%....50%....100% - 34 passes
+==PROF== Profiling "do_not_remove_this_kernel()" - 133: 0%....50%....100% - 34 passes
+Layer Time: 60041.8 ms
+Op Time: 59915.2 ms
 
 Test Accuracy: 0.8714
 
-==PROF== Disconnected from process 2382211
+==PROF== Disconnected from process 3774912
 ==PROF== Report: /u/chen30/ece408git/Project/analysis_file.ncu-rep
