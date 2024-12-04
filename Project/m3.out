@@ -2,78 +2,38 @@ Test batch size: 10000
 Loading fashion-mnist data...Done
 Loading model...Done
 Conv-GPU==
-==PROF== Connected to process 2293706 (/u/chen30/ece408git/Project/m3)
+==PROF== Connected to process 1174769 (/u/chen30/ece408git/Project/m3)
 ==PROF== Profiling "prefn_marker_kernel()" - 0: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 1: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 2: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 3: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 4: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 5: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 6: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 7: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 8: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 9: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 10: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 11: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 12: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 13: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 14: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 15: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 16: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 17: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 18: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 19: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 20: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 21: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 22: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 23: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 24: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 25: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 26: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 27: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 28: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 29: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 30: 0%....50%....100% - 34 passes
-==PROF== Profiling "do_not_remove_this_kernel()" - 31: 0%....50%....100% - 34 passes
-Layer Time: 67561.3 ms
-Op Time: 67387.4 ms
+==PROF== Profiling "fused_conv_kernel" - 1: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 2: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 3: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 4: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 5: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 6: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 7: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 8: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 9: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 10: 0%....50%....100% - 34 passes
+==PROF== Profiling "do_not_remove_this_kernel()" - 11: 0%....50%....100% - 34 passes
+Layer Time: 25225.6 ms
+Op Time: 25053.6 ms
 Conv-GPU==
-==PROF== Profiling "prefn_marker_kernel()" - 32: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 33: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 34: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 35: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 36: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 37: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 38: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 39: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 40: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 41: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 42: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 43: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 44: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 45: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 46: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 47: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 48: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 49: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 50: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 51: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 52: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 53: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 54: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 55: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 56: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 57: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 58: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 59: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_unrolling_kernel" - 60: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrixMultiplySharedOptimized" - 61: 0%....50%....100% - 34 passes
-==PROF== Profiling "matrix_permute_kernel" - 62: 0%....50%....100% - 34 passes
-==PROF== Profiling "do_not_remove_this_kernel()" - 63: 0%....50%....100% - 34 passes
-Layer Time: 55100.6 ms
-Op Time: 54973.8 ms
+==PROF== Profiling "prefn_marker_kernel()" - 12: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 13: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 14: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 15: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 16: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 17: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 18: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 19: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 20: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 21: 0%....50%....100% - 34 passes
+==PROF== Profiling "fused_conv_kernel" - 22: 0%....50%....100% - 34 passes
+==PROF== Profiling "do_not_remove_this_kernel()" - 23: 0%....50%....100% - 34 passes
+Layer Time: 26829.3 ms
+Op Time: 26701.8 ms
 
 Test Accuracy: 0.8714
 
-==PROF== Disconnected from process 2293706
+==PROF== Disconnected from process 1174769
 ==PROF== Report: /u/chen30/ece408git/Project/analysis_file.ncu-rep
