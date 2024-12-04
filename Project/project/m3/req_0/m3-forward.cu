@@ -24,7 +24,7 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
     */
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-    
+
     const int H_unroll = Channel * K * K;
     const int W_unroll = Batch * Height_out * Width_out;
 
@@ -124,69 +124,43 @@ __global__ void matrix_permute_kernel(const float *input, float *output, int Map
 
 __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, const float *host_input, const float *host_mask, float **device_output_ptr, float **device_input_ptr, float **device_mask_ptr, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
-
-    // Create a CUDA stream
-    cudaStream_t stream;
-    cudaStreamCreate(&stream);
-
-    cudaError_t err;
-
     // Allocate device memory for the mask and copy it
     size_t mask_size = Map_out * Channel * K * K * sizeof(float);
-    err = cudaMalloc((void**) device_mask_ptr, mask_size);
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA error (mask malloc): " << cudaGetErrorString(err) << std::endl;
-        exit(-1);
-    }
-    err = cudaMemcpyAsync(*device_mask_ptr, host_mask, mask_size, cudaMemcpyHostToDevice, stream);
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA error (mask memcpy): " << cudaGetErrorString(err) << std::endl;
-        exit(-1);
-    }
-
-    // Compute output dimensions
-    const int Height_out = Height - K + 1;
-    const int Width_out = Width - K + 1;
-    const int image_size = Height_out * Width_out;
+    cudaMalloc((void**) device_mask_ptr, mask_size);
+    cudaMemcpy(*device_mask_ptr, host_mask, mask_size, cudaMemcpyHostToDevice);
 
     // Determine the batch slice size and number of slices
     int batch_slice_size = MAX_BATCH_SIZE; // Adjust based on available memory
     int num_slices = (Batch + batch_slice_size - 1) / batch_slice_size;
 
+    // Compute output dimensions
+    const int Height_out = Height - K + 1;
+    const int Width_out = Width - K + 1;
+
     // Allocate device memory for input and output slices
     size_t input_slice_size = batch_slice_size * Channel * Height * Width * sizeof(float);
-    err = cudaMalloc((void**) device_input_ptr, input_slice_size);
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA error (input malloc): " << cudaGetErrorString(err) << std::endl;
-        exit(-1);
-    }
+    cudaMalloc((void**) device_input_ptr, input_slice_size); // device_input_slices
 
     size_t output_slice_size = batch_slice_size * Map_out * Height_out * Width_out * sizeof(float);
-    err = cudaMalloc((void**) device_output_ptr, output_slice_size);
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA error (output malloc): " << cudaGetErrorString(err) << std::endl;
-        exit(-1);
-    }
+    cudaMalloc((void**) device_output_ptr, output_slice_size); // device_output_slices
 
     // Allocate device memory for unrolled matrix and matmul output
     int H_unroll = Channel * K * K;
     int W_unroll = batch_slice_size * Height_out * Width_out;
     size_t unroll_size = H_unroll * W_unroll * sizeof(float);
     float *unrolled_matrix;
-    err = cudaMalloc((void**)&unrolled_matrix, unroll_size);
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA error (unrolled_matrix malloc): " << cudaGetErrorString(err) << std::endl;
-        exit(-1);
-    }
+    cudaMalloc((void**)&unrolled_matrix, unroll_size);
 
     int numCRows = Map_out;
     int numCColumns = batch_slice_size * Height_out * Width_out;
     size_t matmul_size = numCRows * numCColumns * sizeof(float);
     float *matmul_output;
-    err = cudaMalloc((void**)&matmul_output, matmul_size);
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA error (matmul_output malloc): " << cudaGetErrorString(err) << std::endl;
-        exit(-1);
+    cudaMalloc((void**)&matmul_output, matmul_size);
+
+    // Create CUDA streams
+    cudaStream_t *streams = new cudaStream_t[num_slices];
+    for (int i = 0; i < num_slices; ++i) {
+        cudaStreamCreate(&streams[i]);
     }
 
     // Process each batch slice
@@ -196,15 +170,11 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 
         // Compute host pointers for the current slice
         const float *host_input_slice = host_input + slice_idx * batch_slice_size * Channel * Height * Width;
-        float *host_output_slice = const_cast<float*>(host_output) + slice_idx * batch_slice_size * Map_out * image_size;
+        float *host_output_slice = const_cast<float*>(host_output) + slice_idx * batch_slice_size * Map_out * Height_out * Width_out;
 
         // Asynchronously copy input slice to device
         size_t current_input_size = current_batch_size * Channel * Height * Width * sizeof(float);
-        err = cudaMemcpyAsync(*device_input_ptr, host_input_slice, current_input_size, cudaMemcpyHostToDevice, stream);
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error (input memcpy): " << cudaGetErrorString(err) << std::endl;
-            exit(-1);
-        }
+        cudaMemcpyAsync(*device_input_ptr, host_input_slice, current_input_size, cudaMemcpyHostToDevice, streams[slice_idx]);
 
         // Update dimensions for the current batch size
         int current_W_unroll = current_batch_size * Height_out * Width_out;
@@ -215,7 +185,7 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
                             (H_unroll + blockDim_unroll.y - 1) / blockDim_unroll.y);
 
         // Launch unrolling kernel
-        matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll, 0, stream>>>(
+        matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll, 0, streams[slice_idx]>>>(
             *device_input_ptr,
             unrolled_matrix,
             current_batch_size,
@@ -224,11 +194,6 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
             Width,
             K
         );
-        err = cudaGetLastError();
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error (unrolling kernel): " << cudaGetErrorString(err) << std::endl;
-            exit(-1);
-        }
 
         // Set kernel dimensions for matrix multiplication
         int numARows = Map_out;
@@ -242,7 +207,7 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
         dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
 
         // Launch matrix multiplication kernel
-        matrixMultiplyShared<<<dimGrid, dimBlock, 0, stream>>>(
+        matrixMultiplyShared<<<dimGrid, dimBlock, 0, streams[slice_idx]>>>(
             *device_mask_ptr,
             unrolled_matrix,
             matmul_output,
@@ -250,48 +215,31 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
             numBRows, numBColumns,
             numCRows, numCColumns
         );
-        err = cudaGetLastError();
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error (matmul kernel): " << cudaGetErrorString(err) << std::endl;
-            exit(-1);
-        }
 
         // Set kernel dimensions for permutation
         const int out_image_size = Height_out * Width_out;
         dim3 permute_kernel_grid_dim((out_image_size - 1) / BLOCK_SIZE + 1, current_batch_size, 1);
 
         // Launch permutation kernel
-        matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE, 0, stream>>>(
+        matrix_permute_kernel<<<permute_kernel_grid_dim, BLOCK_SIZE, 0, streams[slice_idx]>>>(
             matmul_output,
             *device_output_ptr,
             Map_out,
             current_batch_size,
             out_image_size
         );
-        err = cudaGetLastError();
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error (permute kernel): " << cudaGetErrorString(err) << std::endl;
-            exit(-1);
-        }
 
         // Asynchronously copy output slice back to host
         size_t current_output_size = current_batch_size * Map_out * Height_out * Width_out * sizeof(float);
-        err = cudaMemcpyAsync(host_output_slice, *device_output_ptr, current_output_size, cudaMemcpyDeviceToHost, stream);
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error (output memcpy): " << cudaGetErrorString(err) << std::endl;
-            exit(-1);
-        }
-
-        // Synchronize the stream after each slice
-        err = cudaStreamSynchronize(stream);
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error (stream synchronize): " << cudaGetErrorString(err) << std::endl;
-            exit(-1);
-        }
+        cudaMemcpyAsync(host_output_slice, *device_output_ptr, current_output_size, cudaMemcpyDeviceToHost, streams[slice_idx]);
     }
 
-    // Destroy the stream
-    cudaStreamDestroy(stream);
+    // Synchronize and destroy streams
+    for (int i = 0; i < num_slices; ++i) {
+        cudaStreamSynchronize(streams[i]);
+        cudaStreamDestroy(streams[i]);
+    }
+    delete[] streams;
 
     // Free device memory
     cudaFree(unrolled_matrix);
@@ -305,18 +253,26 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
     *device_output_ptr = nullptr;
     *device_mask_ptr = nullptr;
 
+    // Check for errors
+    cudaError_t error = cudaGetLastError();
+    if(error != cudaSuccess)
+    {
+        std::cout<<"CUDA error (prolog): "<<cudaGetErrorString(error)<<std::endl;
+        exit(-1);
+    }
+
 }
 
 
 __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *device_input, const float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
-    // no action on the host function since all work are done in con_forward_gpu_prolog
+    // nothing to do on this application
 }
 
 
 __host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *device_output, float *device_input, float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
-    // no action on the host function since all work are done in con_forward_gpu_prolog
+    // TODO: Copy the output back to host
 }
 
 
