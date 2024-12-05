@@ -2,9 +2,9 @@
 #include <iostream>
 #include "gpu-new-forward.h"
 
-#define TILE_WIDTH 16
+#define TILE_WIDTH 32
 #define BLOCK_SIZE 256
-#define MAX_BATCH_SIZE 1000
+#define MAX_BATCH_SIZE 1024
 
 __global__ void fused_conv_kernel(const float *__restrict__ input, const float *__restrict__ mask, float *__restrict__ output,
                                   const int Batch, const int Map_out, const int Channel,
@@ -15,8 +15,8 @@ __global__ void fused_conv_kernel(const float *__restrict__ input, const float *
     const int W_unroll = Batch * Height_out * Width_out;
 
     // Shared memory for mask and input tiles
-    __shared__ float tileA[TILE_WIDTH][TILE_WIDTH];
-    __shared__ float tileB[TILE_WIDTH][TILE_WIDTH];
+    __shared__ float tileA[TILE_WIDTH][TILE_WIDTH + 1];
+    __shared__ float tileB[TILE_WIDTH][TILE_WIDTH + 1];
 
     int by = blockIdx.y;  // Output feature map index (Map_out dimension)
     int bx = blockIdx.x;  // Column index in the unrolled input matrix
@@ -67,6 +67,7 @@ __global__ void fused_conv_kernel(const float *__restrict__ input, const float *
 
         // Perform the multiplication and accumulation
         if (row < Map_out && col < W_unroll) {
+            #pragma unroll
             for (int k = 0; k < TILE_WIDTH; ++k) {
                 val += tileA[ty][k] * tileB[k][tx];
             }
