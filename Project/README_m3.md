@@ -1,6 +1,8 @@
 # Milestone 3: GPU Convolution Kernel Optimizations
 
-***Deadline: December 6th, 2024, 8 PM CST***
+Deadline: ~~December 6th, 2024, 8 PM CST~~ **December 13th, 2024, 8 PM CST**
+
+The updated deadline is a firm deadline. The 3-day grace period doesn't apply.
 
 Please check [this](https://campuswire.com/c/GF7DDC41F/feed/653) CampusWire post regularly for project FAQ and updates.
 
@@ -23,6 +25,7 @@ Please check [this](https://campuswire.com/c/GF7DDC41F/feed/653) CampusWire post
   - [Hints and Links for Implementing the Optimizations](#hints-and-links-for-implementing-the-optimizations)
   - [Extra credits in the project](#extra-credits-in-the-project)
 - [Rubric](#rubric)
+- [Final Competition](#final-competition)
 
 ## Create your own GPU optimizations! The real race against time.
 
@@ -36,6 +39,8 @@ Op times are sometimes quite arbitrary and is not the only way to show improveme
 but you have to provide your implementation in your code and sufficient profiling results in your report. Also please remember when profiling your optimizations, replace the `#SBATCH --constraint="projects"` with `#SBATCH --constraint="projects,perf,nvperf"` flag to run your code.
 
 Although you are required to implement the Streams optimization, for the purpose of the final performance test, you should disable multiple streams and use a single stream in your `/project/src/layer/custom/m3-forward.cu`. This is because Op Times are not a reliable metric for evaluating multi-stream applications.
+
+Your final submission must have correct accuracy for any batch size. Therefore, avoid any optimizations that could impact accuracy in your final submission, such as FP16. You may still implement FP16 as an individual optimization and it will count towards the 8 points of optional optimizations.
 
 If you have done milestone 2 correctly, for a batch size of 10000, the sum between the first and second layer OP Times should equal about **200ms**.
 
@@ -129,7 +134,7 @@ For **Project Milestone 3**, you will need to submit your work across three plat
     |---> /req_0
         |---> m3.out
         |---> analysis.ncu-rep
-        |---> output
+        |---> profile.out(optional)
         |---> analysis.nsys-rep(optional)
         |--->...( other useful profiling results)
     |---> /req_1
@@ -186,6 +191,8 @@ In this optimization task, the goal is to overlap data transfer with kernel exec
 
 - Define additional global or static variables to store the host memory pointers.
 - Do all the work in the `conv_forward_gpu_prolog` function.
+
+To overlap kernel execution and data transfers, the host memory involved in the data transfer must be pinned memory. See [How to Overlap Data Transfers in CUDA C/C++](https://developer.nvidia.com/blog/how-overlap-data-transfers-cuda-cc/).
 
 #### req_1 Tensor Cores/Joint Register and Shared Memory Tiling
 
@@ -280,3 +287,26 @@ Make sure you implement three required optimizations and additional optimization
      - Kernel Fusion ( 10% )
      - Other 8 optimization points ( 1% per point, 8% in total )
 4. Extra Credit ( up to +4% maximum, +0.4% per additional optimization point )
+
+## Final Competition
+
+**Deadline: December 13th, 8:00 PM CST.** The grace period does not apply to the final competition.
+
+Optionally, you can compete performance of your convolution kernel with other students. We will award extra credits to top performers in this competition. The metric used for this competition will be the sum of OP Times for batch size of 5,000. You can monitor the current standings by accessing the `competition_rank.csv` file in your `_grade` branch within your GitHub repository. To enter the competition, submit your optimized convolution code in the `/Project/project/src/layer/custom/m3-competition.cu` and push it to your GitHub repository.
+
+**Submission Requirements**
+1. Only submissions with exactly correct accuracies are eligible for ranking.
+2. All GPU kernel calls must occur within the `conv_forward_gpu()` function.
+3. You must implement convolution using matrix unroll.
+
+Since we want you to focus on kernel optimizations, host-side optimizations like stream overlap will have little effect. The leaderboard will be updated every 24 hours at night starting from December 11th, based on each valid submission. We will finalize the standing of each participant by taking the average of multiple runs. Note that it is also possible that some participants develop in private and submit their ranking at the last minute. So don't be surprised if you fall out of a certain bracket in the end.
+
+Extra credits are awarded based on both leaderboard rankings and Op Times. The total extra credits are calculated as the sum of points earned from both categories.
+
+Rankings
+1. Rank 1-3 (1 point towards the final grade)
+2. Rank 4-10 (0.5 point towards the final grade)
+3. Rank 11-30 (0.25 point towards the final grade)
+
+Op Times
+1. Sum of OP times is less than 22 ms (0.25 point towards the final grade)
