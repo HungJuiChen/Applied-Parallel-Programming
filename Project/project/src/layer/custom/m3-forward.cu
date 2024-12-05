@@ -5,7 +5,7 @@
 #define TILE_WIDTH 16
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
-#define MAX_MASK_SIZE 1024  // Adjust based on your maximum expected mask size
+#define MAX_MASK_SIZE 8192  // Adjust based on your maximum expected mask size
 
 __constant__ float const_mask[MAX_MASK_SIZE];
 
