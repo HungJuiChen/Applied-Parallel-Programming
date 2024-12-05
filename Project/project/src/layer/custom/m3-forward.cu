@@ -4,9 +4,9 @@
 
 #define TILE_WIDTH 16
 #define BLOCK_SIZE 256
-#define MAX_BATCH_SIZE 5000
+#define MAX_BATCH_SIZE 1000
 
-__global__ void fused_conv_kernel(const float *input, const float *mask, float *output,
+__global__ void fused_conv_kernel(const float *__restrict__ input, const float *__restrict__ mask, float *__restrict__ output,
                                   const int Batch, const int Map_out, const int Channel,
                                   const int Height, const int Width, const int K) {
     const int Height_out = Height - K + 1;
