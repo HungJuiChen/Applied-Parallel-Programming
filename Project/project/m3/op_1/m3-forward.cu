@@ -24,9 +24,7 @@ __global__ void matrix_unrolling_kernel(const float *__restrict__ input, float *
     */
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-    //(void)Height_out; // silence declared but never referenced warning. remove this line when you start working
-    //(void)Width_out; // silence declared but never referenced warning. remove this line when you start working
-
+    
     const int H_unroll = Channel * K * K;
     const int W_unroll = Batch * Height_out * Width_out;
 

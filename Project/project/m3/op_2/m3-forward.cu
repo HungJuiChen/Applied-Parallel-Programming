@@ -27,7 +27,7 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
 
     const int W_unroll = Batch * Height_out * Width_out;
 
-    // Calculate h_unroll and w_unroll using 2D grid and block indices
+    // Calculate w_unroll using 2D grid and block indices
     int w_unroll = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (w_unroll < W_unroll) {
@@ -36,11 +36,6 @@ __global__ void matrix_unrolling_kernel(const float *input, float *output,
         int h = remainder / Width_out;
         int w = remainder % Width_out;
         
-    
-        // We have some nice #defs for you below to simplify indexing. Feel free to use them, or create your own.
-        // An example use of these macros:
-        // float a = in_4d(0,0,0,0)
-
         // Unroll over h_unroll
         #pragma unroll
         for (int c = 0; c < Channel; ++c) {
@@ -115,7 +110,6 @@ __global__ void matrix_permute_kernel(const float *input, float *output, int Map
     int b = blockIdx.y;
     int x = blockIdx.x * BLOCK_SIZE + threadIdx.x;
     if (x < image_size) {
-        // Unroll over Map_out if it's small
         #pragma unroll
         for (int m = 0; m < Map_out; m++) {
             output[b * Map_out * image_size + m * image_size + x] =
