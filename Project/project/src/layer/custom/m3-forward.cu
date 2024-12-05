@@ -15,8 +15,8 @@ __global__ void fused_conv_kernel(const float *__restrict__ input, const float *
     const int W_unroll = Batch * Height_out * Width_out;
 
     // Shared memory for mask and input tiles
-    __shared__ float tileA[TILE_WIDTH][TILE_WIDTH + 1];
-    __shared__ float tileB[TILE_WIDTH][TILE_WIDTH + 1];
+    __shared__ float tileA[TILE_WIDTH][TILE_WIDTH];
+    __shared__ float tileB[TILE_WIDTH][TILE_WIDTH];
 
     int by = blockIdx.y;  // Output feature map index (Map_out dimension)
     int bx = blockIdx.x;  // Column index in the unrolled input matrix
