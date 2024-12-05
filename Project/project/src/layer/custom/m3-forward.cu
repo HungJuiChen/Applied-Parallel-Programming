@@ -5,11 +5,11 @@
 #define TILE_WIDTH 16
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
-#define MAX_MASK_SIZE 8192  // Adjust based on your maximum expected mask size
+#define MAX_MASK_SIZE 1024  // Adjust based on your maximum expected mask size
 
 __constant__ float const_mask[MAX_MASK_SIZE];
 
-__global__ void fused_conv_kernel(const float *__restrict__ input, const float *__restrict__ mask, float *__restrict__ output,
+__global__ void fused_conv_kernel(const float *__restrict__ input, float *__restrict__ output,
                                   const int Batch, const int Map_out, const int Channel,
                                   const int Height, const int Width, const int K) {
     const int Height_out = Height - K + 1;
@@ -35,7 +35,7 @@ __global__ void fused_conv_kernel(const float *__restrict__ input, const float *
     for (int m = 0; m < (H_unroll - 1) / TILE_WIDTH + 1; ++m) {
         // Load mask tile into shared memory
         if (row < Map_out && m * TILE_WIDTH + tx < H_unroll) {
-            tileA[ty][tx] = mask[row * H_unroll + m * TILE_WIDTH + tx];
+            tileA[ty][tx] = const_mask[row * H_unroll + m * TILE_WIDTH + tx];
         } else {
             tileA[ty][tx] = 0.0f;
         }
@@ -148,7 +148,6 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         // Launch the fused kernel
         fused_conv_kernel<<<dimGrid, dimBlock>>>(
             device_input + batch_idx * MAX_BATCH_SIZE * Channel * Height * Width,
-            device_mask,
             device_output + batch_idx * MAX_BATCH_SIZE * Map_out * Height_out * Width_out,
             current_batch_size,
             Map_out,
@@ -179,7 +178,6 @@ __host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *d
     // TODO: Free device memory
     cudaFree(device_output);
     cudaFree(device_input);
-    cudaFree(device_mask);
 
     cudaError_t error = cudaGetLastError();
     if(error != cudaSuccess)
