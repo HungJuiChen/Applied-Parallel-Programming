@@ -6,7 +6,7 @@
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
 
-__global__ void fused_conv_kernel(const float *input, const float *mask, float *output,
+__global__ void fused_conv_kernel(const float *__restrict__ input, const float *__restrict__ mask, float *__restrict__ output,
                                   const int Batch, const int Map_out, const int Channel,
                                   const int Height, const int Width, const int K) {
     const int Height_out = Height - K + 1;
@@ -31,13 +31,11 @@ __global__ void fused_conv_kernel(const float *input, const float *mask, float *
     // Loop over tiles of the unrolled input
     for (int m = 0; m < (H_unroll - 1) / TILE_WIDTH + 1; ++m) {
         // Load mask tile into shared memory
-        // if (row < Map_out && m * TILE_WIDTH + tx < H_unroll) {
-        //     tileA[ty][tx] = mask[row * H_unroll + m * TILE_WIDTH + tx];
-        // } else {
-        //     tileA[ty][tx] = 0.0f;
-        // }
-        tileA[ty][tx] = (row < Map_out && m * TILE_WIDTH + tx < H_unroll) ?
-                        mask[row * H_unroll + m * TILE_WIDTH + tx] : 0.0f;
+        if (row < Map_out && m * TILE_WIDTH + tx < H_unroll) {
+            tileA[ty][tx] = mask[row * H_unroll + m * TILE_WIDTH + tx];
+        } else {
+            tileA[ty][tx] = 0.0f;
+        }
 
         // Compute indices for the input
         int h_unroll = m * TILE_WIDTH + ty;
@@ -56,14 +54,11 @@ __global__ void fused_conv_kernel(const float *input, const float *mask, float *
             int input_row = h + p;
             int input_col = w + q;
 
-            // if (b < Batch && c < Channel && input_row < Height && input_col < Width) {
-            //     tileB[ty][tx] = input[b * (Channel * Height * Width) + c * (Height * Width) + input_row * Width + input_col];
-            // } else {
-            //     tileB[ty][tx] = 0.0f;
-            // }
-            tileB[ty][tx] = (b < Batch && c < Channel && input_row < Height && input_col < Width) ?
-                            input[b * (Channel * Height * Width) + c * (Height * Width) + input_row * Width + input_col] :
-                            0.0f;
+            if (b < Batch && c < Channel && input_row < Height && input_col < Width) {
+                tileB[ty][tx] = input[b * (Channel * Height * Width) + c * (Height * Width) + input_row * Width + input_col];
+            } else {
+                tileB[ty][tx] = 0.0f;
+            }
         } else {
             tileB[ty][tx] = 0.0f;
         }
