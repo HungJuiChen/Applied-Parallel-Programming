@@ -2,9 +2,9 @@
 #include <iostream>
 #include "gpu-new-forward.h"
 
-#define TILE_WIDTH 16
+#define TILE_WIDTH 8
 #define BLOCK_SIZE 256
-#define MAX_BATCH_SIZE 500
+#define MAX_BATCH_SIZE 1000
 
 __global__ void fused_conv_kernel(const float *input, const float *mask, float *output,
                                   const int Batch, const int Map_out, const int Channel,
