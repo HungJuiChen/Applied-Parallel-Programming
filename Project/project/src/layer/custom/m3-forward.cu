@@ -135,9 +135,9 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
 
     // Launch the fused kernel
     fused_conv_kernel<<<dimGrid, dimBlock>>>(
-        device_input + batch_idx * Batch * Channel * Height * Width,
+        device_input,
         device_mask,
-        device_output + batch_idx * Batch * Map_out * Height_out * Width_out,
+        device_output,
         Batch,
         Map_out,
         Channel,
