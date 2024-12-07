@@ -125,7 +125,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
 
-    int current_W_unroll = Batch * Height_out * Width_out;
+    size_t current_W_unroll = Batch * Height_out * Width_out;
 
 
     // Set grid and block dimensions
