@@ -125,40 +125,68 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
 
-    // Determine the number of mini-batches
-    int num_batches = (Batch + MAX_BATCH_SIZE - 1) / MAX_BATCH_SIZE;
+    int current_W_unroll = Batch * Height_out * Width_out;
 
-    // Iterate over each mini-batch
-    for(int batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
-        // Calculate the current mini-batch size
-        int current_batch_size = (batch_idx == num_batches - 1) ? (Batch - batch_idx * MAX_BATCH_SIZE) : MAX_BATCH_SIZE;
-        int current_W_unroll = current_batch_size * Height_out * Width_out;
 
-        // Set grid and block dimensions
-        dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
-        dim3 dimGrid((current_W_unroll + TILE_WIDTH - 1) / TILE_WIDTH,
-                     (Map_out + TILE_WIDTH - 1) / TILE_WIDTH);
+    // Set grid and block dimensions
+    dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
+    dim3 dimGrid((current_W_unroll + TILE_WIDTH - 1) / TILE_WIDTH,
+                    (Map_out + TILE_WIDTH - 1) / TILE_WIDTH);
 
-        // Launch the fused kernel
-        fused_conv_kernel<<<dimGrid, dimBlock>>>(
-            device_input + batch_idx * MAX_BATCH_SIZE * Channel * Height * Width,
-            device_mask,
-            device_output + batch_idx * MAX_BATCH_SIZE * Map_out * Height_out * Width_out,
-            current_batch_size,
-            Map_out,
-            Channel,
-            Height,
-            Width,
-            K
-        );
+    // Launch the fused kernel
+    fused_conv_kernel<<<dimGrid, dimBlock>>>(
+        device_input + batch_idx * Batch * Channel * Height * Width,
+        device_mask,
+        device_output + batch_idx * Batch * Map_out * Height_out * Width_out,
+        Batch,
+        Map_out,
+        Channel,
+        Height,
+        Width,
+        K
+    );
 
-        // Error checking
-        cudaError_t error = cudaGetLastError();
-        if(error != cudaSuccess) {
-            std::cout << "CUDA error (fused kernel): " << cudaGetErrorString(error) << std::endl;
-            exit(-1);
-        }
+    // Error checking
+    cudaError_t error = cudaGetLastError();
+    if(error != cudaSuccess) {
+        std::cout << "CUDA error (fused kernel): " << cudaGetErrorString(error) << std::endl;
+        exit(-1);
     }
+
+    // Determine the number of mini-batches
+    // int num_batches = (Batch + MAX_BATCH_SIZE - 1) / MAX_BATCH_SIZE;
+
+    // // Iterate over each mini-batch
+    // for(int batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
+    //     // Calculate the current mini-batch size
+    //     int current_batch_size = (batch_idx == num_batches - 1) ? (Batch - batch_idx * MAX_BATCH_SIZE) : MAX_BATCH_SIZE;
+    //     int current_W_unroll = current_batch_size * Height_out * Width_out;
+
+    //     // Set grid and block dimensions
+    //     dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
+    //     dim3 dimGrid((current_W_unroll + TILE_WIDTH - 1) / TILE_WIDTH,
+    //                  (Map_out + TILE_WIDTH - 1) / TILE_WIDTH);
+
+    //     // Launch the fused kernel
+    //     fused_conv_kernel<<<dimGrid, dimBlock>>>(
+    //         device_input + batch_idx * MAX_BATCH_SIZE * Channel * Height * Width,
+    //         device_mask,
+    //         device_output + batch_idx * MAX_BATCH_SIZE * Map_out * Height_out * Width_out,
+    //         current_batch_size,
+    //         Map_out,
+    //         Channel,
+    //         Height,
+    //         Width,
+    //         K
+    //     );
+
+    //     // Error checking
+    //     cudaError_t error = cudaGetLastError();
+    //     if(error != cudaSuccess) {
+    //         std::cout << "CUDA error (fused kernel): " << cudaGetErrorString(error) << std::endl;
+    //         exit(-1);
+    //     }
+    // }
 }
 
 
