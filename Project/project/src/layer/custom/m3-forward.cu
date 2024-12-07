@@ -9,82 +9,73 @@
 __global__ void fused_conv_kernel(const float *__restrict__ input, const float *__restrict__ mask, float *__restrict__ output,
                                   const int Batch, const int Map_out, const int Channel,
                                   const int Height, const int Width, const int K) {
+    const int TILE_WIDTH = 16; // Tile width
+    const int REG_TILE = 4;    // Register tile size per thread
     const int Height_out = Height - K + 1;
     const int Width_out = Width - K + 1;
-    const int H_unroll = Channel * K * K;
-    const int W_unroll = Batch * Height_out * Width_out;
 
-    // Shared memory for mask and input tiles
-    __shared__ float tileA[TILE_WIDTH][TILE_WIDTH];
-    __shared__ float tileB[TILE_WIDTH][TILE_WIDTH];
+    // Shared memory allocation for a tile
+    __shared__ float shared_input[TILE_WIDTH + K - 1][TILE_WIDTH + K - 1];
+    __shared__ float shared_mask[K][K];
 
-    int by = blockIdx.y;  // Output feature map index (Map_out dimension)
-    int bx = blockIdx.x;  // Column index in the unrolled input matrix
-    int ty = threadIdx.y;
+    // Register tiles for storing partial results
+    float reg_tile[REG_TILE][REG_TILE] = {0};
+
+    // Thread indices
     int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int row = blockIdx.y * TILE_WIDTH + ty;
+    int col = blockIdx.x * TILE_WIDTH + tx;
 
-    int row = by * TILE_WIDTH + ty;  // Index in mask (filter weights)
-    int col = bx * TILE_WIDTH + tx;  // Index in unrolled input
-
-    float val = 0.0f;
-
-    // Loop over tiles of the unrolled input
-    for (int m = 0; m < (H_unroll - 1) / TILE_WIDTH + 1; ++m) {
-        // Load mask tile into shared memory
-        if (row < Map_out && m * TILE_WIDTH + tx < H_unroll) {
-            tileA[ty][tx] = mask[row * H_unroll + m * TILE_WIDTH + tx];
-        } else {
-            tileA[ty][tx] = 0.0f;
+    // Load shared memory tiles
+    for (int c = 0; c < Channel; ++c) {
+        // Load input tile into shared memory
+        for (int i = 0; i < K; ++i) {
+            for (int j = 0; j < K; ++j) {
+                int input_row = row + i;
+                int input_col = col + j;
+                if (input_row < Height && input_col < Width) {
+                    shared_input[ty + i][tx + j] = input[c * Height * Width + input_row * Width + input_col];
+                } else {
+                    shared_input[ty + i][tx + j] = 0.0f;
+                }
+            }
         }
 
-        // Compute indices for the input
-        int h_unroll = m * TILE_WIDTH + ty;
-        int w_unroll = col;
-
-        if (h_unroll < H_unroll && w_unroll < W_unroll) {
-            int c = h_unroll / (K * K);
-            int p = (h_unroll % (K * K)) / K;
-            int q = (h_unroll % (K * K)) % K;
-
-            int b = w_unroll / (Height_out * Width_out);
-            int remainder = w_unroll % (Height_out * Width_out);
-            int h = remainder / Width_out;
-            int w = remainder % Width_out;
-
-            int input_row = h + p;
-            int input_col = w + q;
-
-            if (b < Batch && c < Channel && input_row < Height && input_col < Width) {
-                tileB[ty][tx] = input[b * (Channel * Height * Width) + c * (Height * Width) + input_row * Width + input_col];
-            } else {
-                tileB[ty][tx] = 0.0f;
+        // Load mask into shared memory
+        for (int i = ty; i < K; i += TILE_WIDTH) {
+            for (int j = tx; j < K; j += TILE_WIDTH) {
+                shared_mask[i][j] = mask[c * K * K + i * K + j];
             }
-        } else {
-            tileB[ty][tx] = 0.0f;
         }
 
         __syncthreads();
 
-        // Perform the multiplication and accumulation
-        if (row < Map_out && col < W_unroll) {
-            #pragma unroll
-            for (int k = 0; k < TILE_WIDTH; ++k) {
-                val += tileA[ty][k] * tileB[k][tx];
+        // Perform convolution with the tile
+        for (int i = 0; i < REG_TILE; ++i) {
+            for (int j = 0; j < REG_TILE; ++j) {
+                int r = ty * REG_TILE + i;
+                int s = tx * REG_TILE + j;
+                for (int p = 0; p < K; ++p) {
+                    for (int q = 0; q < K; ++q) {
+                        reg_tile[i][j] += shared_input[r + p][s + q] * shared_mask[p][q];
+                    }
+                }
             }
         }
 
         __syncthreads();
     }
 
-    // Write the output directly to the correct position
-    if (row < Map_out && col < W_unroll) {
-        int b = col / (Height_out * Width_out);
-        int remainder = col % (Height_out * Width_out);
-        int h = remainder / Width_out;
-        int w = remainder % Width_out;
-
-        if (b < Batch && h < Height_out && w < Width_out) {
-            output[b * (Map_out * Height_out * Width_out) + row * (Height_out * Width_out) + h * Width_out + w] = val;
+    // Write results back to global memory
+    for (int i = 0; i < REG_TILE; ++i) {
+        for (int j = 0; j < REG_TILE; ++j) {
+            int output_row = row + i;
+            int output_col = col + j;
+            if (output_row < Height_out && output_col < Width_out) {
+                output[blockIdx.z * Map_out * Height_out * Width_out +
+                       row * Width_out + col] = reg_tile[i][j];
+            }
         }
     }
 }
