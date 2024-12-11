@@ -122,35 +122,40 @@ __host__ void GPUInterface::conv_forward_gpu(float *host_output, const float *ho
 
     // im2col matrix: dimensions (CKK x N)
     cudaMalloc((void**)&device_input_unrolled, CKK * N * sizeof(float));
-
-    // Launch im2col kernel
+    cudaError_t error = cudaGetLastError();
+    if(error != cudaSuccess)
     {
-        dim3 blockDim(TILE_WIDTH, TILE_WIDTH);
-        dim3 gridDim((N + TILE_WIDTH - 1) / TILE_WIDTH,
-                     (CKK + TILE_WIDTH - 1) / TILE_WIDTH);
-        im2col_kernel<<<gridDim, blockDim>>>(device_input, device_input_unrolled,
-                                             Batch, Channel, Height, Width, K);
-        cudaDeviceSynchronize();
-        cudaError_t error = cudaGetLastError();
-        if (error != cudaSuccess) {
-            std::cerr << "CUDA error (im2col): " << cudaGetErrorString(error) << std::endl;
-            exit(-1);
-        }
+        std::cout<<"CUDA error (prolog): "<<cudaGetErrorString(error)<<std::endl;
+        exit(-1);
     }
 
+    // Launch im2col kernel
+    
+    dim3 blockDim(TILE_WIDTH, TILE_WIDTH);
+    dim3 gridDim((N + TILE_WIDTH - 1) / TILE_WIDTH,
+                    (CKK + TILE_WIDTH - 1) / TILE_WIDTH);
+    im2col_kernel<<<gridDim, blockDim>>>(device_input, device_input_unrolled,
+                                            Batch, Channel, Height, Width, K);
+    cudaDeviceSynchronize();
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        std::cerr << "CUDA error (im2col): " << cudaGetErrorString(error) << std::endl;
+        exit(-1);
+    }
+    
+
     // Now perform GEMM: (M x CKK) * (CKK x N) = (M x N)
-    {
-        dim3 blockDim(TILE_WIDTH, TILE_WIDTH);
-        dim3 gridDim((N + TILE_WIDTH - 1) / TILE_WIDTH,
-                     (M + TILE_WIDTH - 1) / TILE_WIDTH);
-        gemm_kernel<<<gridDim, blockDim>>>(device_mask, device_input_unrolled, device_output,
-                                           M, CKK, N);
-        cudaDeviceSynchronize();
-        cudaError_t error = cudaGetLastError();
-        if (error != cudaSuccess) {
-            std::cerr << "CUDA error (gemm): " << cudaGetErrorString(error) << std::endl;
-            exit(-1);
-        }
+    
+    dim3 blockDim(TILE_WIDTH, TILE_WIDTH);
+    dim3 gridDim((N + TILE_WIDTH - 1) / TILE_WIDTH,
+                    (M + TILE_WIDTH - 1) / TILE_WIDTH);
+    gemm_kernel<<<gridDim, blockDim>>>(device_mask, device_input_unrolled, device_output,
+                                        M, CKK, N);
+    cudaDeviceSynchronize();
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        std::cerr << "CUDA error (gemm): " << cudaGetErrorString(error) << std::endl;
+        exit(-1);
     }
 
     // Copy result back
