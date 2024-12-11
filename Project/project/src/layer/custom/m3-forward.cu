@@ -116,7 +116,7 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
         std::cerr << "Error: Mask size exceeds MAX_FILTER_SIZE\n";
         exit(-1);
     }
-    cudaMemcpyToSymbol(c_mask, host_mask, mask_size * sizeof(float), 0, cudaMemcpyHostToDevice);
+    cudaMemcpyToSymbol(c_mask, host_mask, mask_size * sizeof(float));
 
 
     // Check for errors
