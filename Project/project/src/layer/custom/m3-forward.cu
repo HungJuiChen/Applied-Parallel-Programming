@@ -14,77 +14,74 @@ __global__ void fused_conv_kernel(const float *input, const float *mask, float *
     const int H_unroll = Channel * K * K;
     const int W_unroll = Batch * Height_out * Width_out;
 
-    // Shared memory for mask and input tiles
-    __shared__ float tileA[TILE_WIDTH][TILE_WIDTH];
-    __shared__ float tileB[TILE_WIDTH][TILE_WIDTH];
+    // Optimization: Add padding to reduce bank conflicts
+    __shared__ float tileA[TILE_WIDTH][TILE_WIDTH + 1];
+    __shared__ float tileB[TILE_WIDTH][TILE_WIDTH + 1];
 
-    int by = blockIdx.y;  // Output feature map index (Map_out dimension)
+    int by = blockIdx.y;  // Output feature map index
     int bx = blockIdx.x;  // Column index in the unrolled input matrix
     int ty = threadIdx.y;
     int tx = threadIdx.x;
 
-    int row = by * TILE_WIDTH + ty;  // Index in mask (filter weights)
-    int col = bx * TILE_WIDTH + tx;  // Index in unrolled input
+    int row = by * TILE_WIDTH + ty;
+    int col = bx * TILE_WIDTH + tx;
 
     float val = 0.0f;
 
-    // Loop over tiles of the unrolled input
-    for (int m = 0; m < (H_unroll - 1) / TILE_WIDTH + 1; ++m) {
-        // Load mask tile into shared memory
-        if (row < Map_out && m * TILE_WIDTH + tx < H_unroll) {
-            tileA[ty][tx] = mask[row * H_unroll + m * TILE_WIDTH + tx];
-        } else {
-            tileA[ty][tx] = 0.0f;
-        }
+    // Optimization: Prefetch data and reduce conditional checks
+    for (int m = 0; m < (H_unroll + TILE_WIDTH - 1) / TILE_WIDTH; ++m) {
+        // Prefetch mask with fewer conditionals
+        int mask_idx = row * H_unroll + m * TILE_WIDTH + tx;
+        tileA[ty][tx] = (row < Map_out && m * TILE_WIDTH + tx < H_unroll) 
+                        ? mask[mask_idx] : 0.0f;
 
-        // Compute indices for the input
+        // Prefetch input with optimized indexing
         int h_unroll = m * TILE_WIDTH + ty;
         int w_unroll = col;
 
         if (h_unroll < H_unroll && w_unroll < W_unroll) {
             int c = h_unroll / (K * K);
             int p = (h_unroll % (K * K)) / K;
-            int q = (h_unroll % (K * K)) % K;
+            int q = h_unroll % K;
 
             int b = w_unroll / (Height_out * Width_out);
-            int remainder = w_unroll % (Height_out * Width_out);
-            int h = remainder / Width_out;
-            int w = remainder % Width_out;
+            int h = (w_unroll % (Height_out * Width_out)) / Width_out;
+            int w = w_unroll % Width_out;
 
-            int input_row = h + p;
-            int input_col = w + q;
+            // Optimize input access pattern
+            int input_idx = b * (Channel * Height * Width) + 
+                            c * (Height * Width) + 
+                            (h + p) * Width + 
+                            (w + q);
 
-            if (b < Batch && c < Channel && input_row < Height && input_col < Width) {
-                tileB[ty][tx] = input[b * (Channel * Height * Width) + c * (Height * Width) + input_row * Width + input_col];
-            } else {
-                tileB[ty][tx] = 0.0f;
-            }
+            tileB[ty][tx] = (b < Batch && c < Channel && 
+                             (h + p) < Height && (w + q) < Width) 
+                             ? input[input_idx] : 0.0f;
         } else {
             tileB[ty][tx] = 0.0f;
         }
 
         __syncthreads();
 
-        // Perform the multiplication and accumulation
-        if (row < Map_out && col < W_unroll) {
-            #pragma unroll
-            for (int k = 0; k < TILE_WIDTH; ++k) {
-                val += tileA[ty][k] * tileB[k][tx];
-            }
+        // Aggressive loop unrolling
+        #pragma unroll
+        for (int k = 0; k < TILE_WIDTH; ++k) {
+            val += tileA[ty][k] * tileB[k][tx];
         }
 
         __syncthreads();
     }
 
-    // Write the output directly to the correct position
+    // Simplified output writing
     if (row < Map_out && col < W_unroll) {
         int b = col / (Height_out * Width_out);
-        int remainder = col % (Height_out * Width_out);
-        int h = remainder / Width_out;
-        int w = remainder % Width_out;
+        int h = (col % (Height_out * Width_out)) / Width_out;
+        int w = col % Width_out;
 
         if (b < Batch && h < Height_out && w < Width_out) {
-            output[b * (Map_out * Height_out * Width_out) + row * (Height_out * Width_out) + h * Width_out + w] = val;
+            output[b * (Map_out * Height_out * Width_out) + 
+                   row * (Height_out * Width_out) + 
+                   h * Width_out + w] = val;
         }
     }
 }
