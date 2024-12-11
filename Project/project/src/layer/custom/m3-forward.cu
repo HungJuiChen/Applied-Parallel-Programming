@@ -41,20 +41,6 @@ __global__ void im2col_kernel(const float *input,
     }
 }
 
-class GPUInterface {
-public:
-    void conv_forward_gpu_prolog(const float *host_output, const float *host_input, const float *host_mask,
-                                 float **device_output_ptr, float **device_input_ptr, float **device_mask_ptr,
-                                 int Batch, int Map_out, int Channel, int Height, int Width, int K);
-
-    void conv_forward_gpu(float *device_output, const float *device_input, const float *device_mask,
-                          int Batch, int Map_out, int Channel, int Height, int Width, int K);
-
-    void conv_forward_gpu_epilog(float *host_output, float *device_output, float *device_input, float *device_mask,
-                                 int Batch, int Map_out, int Channel, int Height, int Width, int K);
-
-    void get_device_properties();
-};
 
 void GPUInterface::conv_forward_gpu_prolog(const float *host_output, const float *host_input, const float *host_mask,
                                            float **device_output_ptr, float **device_input_ptr, float **device_mask_ptr,
