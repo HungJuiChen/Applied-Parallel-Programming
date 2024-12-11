@@ -110,110 +110,117 @@ __global__ void matrixMultiplyAndPermute(const float *A, const float *B, float *
     }
 }
 
-class GPUInterface {
-public:
-    void conv_forward_gpu(float *host_output, const float *host_input, const float *host_mask,
-                          const int Batch, const int Map_out, const int Channel,
-                          const int Height, const int Width, const int K) {
+__host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, const float *host_input, const float *host_mask, float **device_output_ptr, float **device_input_ptr, float **device_mask_ptr, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
+{
 
-        // Allocate device memory for input, output, mask
-        const int Height_out = Height - K + 1;
-        const int Width_out = Width - K + 1;
+}
 
-        float *device_input, *device_mask, *device_output;
-        size_t input_size = Batch * Channel * Height * Width * sizeof(float);
-        size_t mask_size = Map_out * Channel * K * K * sizeof(float);
-        size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
+__host__ void GPUInterface::conv_forward_gpu(float *host_output, const float *host_input, const float *host_mask,
+                        const int Batch, const int Map_out, const int Channel,
+                        const int Height, const int Width, const int K) {
 
-        cudaMalloc(&device_input, input_size);
-        cudaMalloc(&device_output, output_size);
-        cudaMalloc(&device_mask, mask_size);
+    // Allocate device memory for input, output, mask
+    const int Height_out = Height - K + 1;
+    const int Width_out = Width - K + 1;
 
-        cudaMemcpy(device_input, host_input, input_size, cudaMemcpyHostToDevice);
-        cudaMemcpy(device_mask, host_mask, mask_size, cudaMemcpyHostToDevice);
+    float *device_input, *device_mask, *device_output;
+    size_t input_size = Batch * Channel * Height * Width * sizeof(float);
+    size_t mask_size = Map_out * Channel * K * K * sizeof(float);
+    size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
 
-        // Determine number of mini-batches
-        int num_batches = (Batch + MAX_BATCH_SIZE - 1) / MAX_BATCH_SIZE;
+    cudaMalloc(&device_input, input_size);
+    cudaMalloc(&device_output, output_size);
+    cudaMalloc(&device_mask, mask_size);
 
-        // Allocate device memory for intermediate unrolled matrix
-        // Max sizes
-        int Height_unrolled = Channel * K * K;
-        size_t max_unroll_size = Height_unrolled * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
-        float *unrolled_matrix;
-        cudaMalloc(&unrolled_matrix, max_unroll_size);
+    cudaMemcpy(device_input, host_input, input_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(device_mask, host_mask, mask_size, cudaMemcpyHostToDevice);
 
-        // For each mini-batch
-        for(int batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
-            int current_batch_size = (batch_idx == num_batches - 1) ? (Batch - batch_idx * MAX_BATCH_SIZE) : MAX_BATCH_SIZE;
-            int current_W_unroll = current_batch_size * Height_out * Width_out;
+    // Determine number of mini-batches
+    int num_batches = (Batch + MAX_BATCH_SIZE - 1) / MAX_BATCH_SIZE;
 
-            // Launch unrolling kernel
-            dim3 blockDim_unroll(16, 16);
-            dim3 gridDim_unroll((current_W_unroll + blockDim_unroll.x - 1) / blockDim_unroll.x,
-                                (Height_unrolled + blockDim_unroll.y - 1) / blockDim_unroll.y);
+    // Allocate device memory for intermediate unrolled matrix
+    // Max sizes
+    int Height_unrolled = Channel * K * K;
+    size_t max_unroll_size = Height_unrolled * (MAX_BATCH_SIZE * Height_out * Width_out) * sizeof(float);
+    float *unrolled_matrix;
+    cudaMalloc(&unrolled_matrix, max_unroll_size);
 
-            matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll>>>(
-                device_input + batch_idx * MAX_BATCH_SIZE * Channel * Height * Width,
-                unrolled_matrix,
-                current_batch_size,
-                Channel,
-                Height,
-                Width,
-                K
-            );
-            cudaDeviceSynchronize();
+    // For each mini-batch
+    for(int batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
+        int current_batch_size = (batch_idx == num_batches - 1) ? (Batch - batch_idx * MAX_BATCH_SIZE) : MAX_BATCH_SIZE;
+        int current_W_unroll = current_batch_size * Height_out * Width_out;
 
-            // Matrix multiply and permute
-            int numCColumns = current_W_unroll;
-            int numCRows = Map_out;
+        // Launch unrolling kernel
+        dim3 blockDim_unroll(16, 16);
+        dim3 gridDim_unroll((current_W_unroll + blockDim_unroll.x - 1) / blockDim_unroll.x,
+                            (Height_unrolled + blockDim_unroll.y - 1) / blockDim_unroll.y);
 
-            dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
-            dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
+        matrix_unrolling_kernel<<<gridDim_unroll, blockDim_unroll>>>(
+            device_input + batch_idx * MAX_BATCH_SIZE * Channel * Height * Width,
+            unrolled_matrix,
+            current_batch_size,
+            Channel,
+            Height,
+            Width,
+            K
+        );
+        cudaDeviceSynchronize();
 
-            matrixMultiplyAndPermute<<<dimGrid, dimBlock>>>(
-                device_mask,
-                unrolled_matrix,
-                device_output + batch_idx * MAX_BATCH_SIZE * Map_out * Height_out * Width_out,
-                Map_out,
-                Channel,
-                Height_out,
-                Width_out,
-                current_batch_size,
-                K
-            );
-            cudaDeviceSynchronize();
-        }
+        // Matrix multiply and permute
+        int numCColumns = current_W_unroll;
+        int numCRows = Map_out;
 
-        // Copy result back to host
-        cudaMemcpy(host_output, device_output, output_size, cudaMemcpyDeviceToHost);
+        dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
+        dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
 
-        // Free device memory
-        cudaFree(device_output);
-        cudaFree(device_input);
-        cudaFree(device_mask);
-        cudaFree(unrolled_matrix);
+        matrixMultiplyAndPermute<<<dimGrid, dimBlock>>>(
+            device_mask,
+            unrolled_matrix,
+            device_output + batch_idx * MAX_BATCH_SIZE * Map_out * Height_out * Width_out,
+            Map_out,
+            Channel,
+            Height_out,
+            Width_out,
+            current_batch_size,
+            K
+        );
+        cudaDeviceSynchronize();
     }
 
-    void get_device_properties()
+    // Copy result back to host
+    cudaMemcpy(host_output, device_output, output_size, cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(device_output);
+    cudaFree(device_input);
+    cudaFree(device_mask);
+    cudaFree(unrolled_matrix);
+}
+
+__host__ void GPUInterface::conv_forward_gpu_epilog(float *host_output, float *device_output, float *device_input, float *device_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
+{
+
+}
+
+__host__ void GPUInterface::get_device_properties()
+{
+    int deviceCount;
+    cudaGetDeviceCount(&deviceCount);
+
+    for(int dev = 0; dev < deviceCount; dev++)
     {
-        int deviceCount;
-        cudaGetDeviceCount(&deviceCount);
+        cudaDeviceProp deviceProp;
+        cudaGetDeviceProperties(&deviceProp, dev);
 
-        for(int dev = 0; dev < deviceCount; dev++)
-        {
-            cudaDeviceProp deviceProp;
-            cudaGetDeviceProperties(&deviceProp, dev);
-
-            std::cout<<"Device "<<dev<<" name: "<<deviceProp.name<<std::endl;
-            std::cout<<"Computational capabilities: "<<deviceProp.major<<"."<<deviceProp.minor<<std::endl;
-            std::cout<<"Max Global memory size: "<<deviceProp.totalGlobalMem<<std::endl;
-            std::cout<<"Max Constant memory size: "<<deviceProp.totalConstMem<<std::endl;
-            std::cout<<"Max Shared memory size per block: "<<deviceProp.sharedMemPerBlock<<std::endl;
-            std::cout<<"Max threads per block: "<<deviceProp.maxThreadsPerBlock<<std::endl;
-            std::cout<<"Max block dimensions: "<<deviceProp.maxThreadsDim[0]<<" x, "<<deviceProp.maxThreadsDim[1]<<" y, "<<deviceProp.maxThreadsDim[2]<<" z"<<std::endl;
-            std::cout<<"Max grid dimensions: "<<deviceProp.maxGridSize[0]<<" x, "<<deviceProp.maxGridSize[1]<<" y, "<<deviceProp.maxGridSize[2]<<" z"<<std::endl;
-            std::cout<<"Warp Size: "<<deviceProp.warpSize<<std::endl;
-        }
+        std::cout<<"Device "<<dev<<" name: "<<deviceProp.name<<std::endl;
+        std::cout<<"Computational capabilities: "<<deviceProp.major<<"."<<deviceProp.minor<<std::endl;
+        std::cout<<"Max Global memory size: "<<deviceProp.totalGlobalMem<<std::endl;
+        std::cout<<"Max Constant memory size: "<<deviceProp.totalConstMem<<std::endl;
+        std::cout<<"Max Shared memory size per block: "<<deviceProp.sharedMemPerBlock<<std::endl;
+        std::cout<<"Max threads per block: "<<deviceProp.maxThreadsPerBlock<<std::endl;
+        std::cout<<"Max block dimensions: "<<deviceProp.maxThreadsDim[0]<<" x, "<<deviceProp.maxThreadsDim[1]<<" y, "<<deviceProp.maxThreadsDim[2]<<" z"<<std::endl;
+        std::cout<<"Max grid dimensions: "<<deviceProp.maxGridSize[0]<<" x, "<<deviceProp.maxGridSize[1]<<" y, "<<deviceProp.maxGridSize[2]<<" z"<<std::endl;
+        std::cout<<"Warp Size: "<<deviceProp.warpSize<<std::endl;
     }
-};
+}
 
