@@ -95,8 +95,7 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 
 }
 
-__host__ void GPUInterface::conv_forward_gpu(float *host_output, const float *host_input, const float *host_mask,
-                                             const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
+__host__ void GPUInterface::conv_forward_gpu(float *host_output, const float *host_input, const float *host_mask, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
     // Derived dimensions
     int Height_out = Height - K + 1;
