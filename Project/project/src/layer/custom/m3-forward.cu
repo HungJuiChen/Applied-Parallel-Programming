@@ -1,13 +1,5 @@
 #include <cmath>
 #include <iostream>
-#include "gpu-new-forward.h"
-
-#define TILE_WIDTH 16
-#define BLOCK_SIZE 256
-#define MAX_BATCH_SIZE 1000
-
-#include <cmath>
-#include <iostream>
 #include <cuda.h>
 #include "gpu-new-forward.h"
 
