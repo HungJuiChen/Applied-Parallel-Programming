@@ -286,7 +286,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         dim3 dimGrid((numCColumns - 1)/TILE_WIDTH + 1, (numCRows -1)/TILE_WIDTH + 1);
 
         // Call the matrix multiplication kernel
-        matrixMultiplySharedAndPermute<<<dimGrid, dimBlock>>>(device_mask, unrolled_matrix, device_output + batch_idx * MAX_BATCH_SIZE * Map_out * out_image_size,
+        matrixMultiplySharedAndPermute<<<dimGrid, dimBlock>>>(device_mask, unrolled_matrix, device_output + batch_idx * MAX_BATCH_SIZE * Map_out * Height_out * Width_out,
                                                     numARows, numAColumns,
                                                     numBRows, numBColumns,
                                                     numCRows, numCColumns,
