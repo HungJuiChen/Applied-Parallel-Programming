@@ -6,10 +6,7 @@
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
 
-#define MAX_FILTER_SIZE 8192*2 // Example large enough number, adjust as needed
-__constant__ float c_mask[MAX_FILTER_SIZE];
-
-__global__ void fused_conv_kernel(const float *input, /*const float *mask,*/ float *output,
+__global__ void fused_conv_kernel(const float *input, const float *mask, float *output,
                                   const int Batch, const int Map_out, const int Channel,
                                   const int Height, const int Width, const int K) {
     const int Height_out = Height - K + 1;
@@ -17,6 +14,7 @@ __global__ void fused_conv_kernel(const float *input, /*const float *mask,*/ flo
     const int H_unroll = Channel * K * K;
     const int W_unroll = Batch * Height_out * Width_out;
 
+    // Shared memory for mask and input tiles
     __shared__ float tileA[TILE_WIDTH][TILE_WIDTH];
     __shared__ float tileB[TILE_WIDTH][TILE_WIDTH];
 
@@ -30,19 +28,24 @@ __global__ void fused_conv_kernel(const float *input, /*const float *mask,*/ flo
 
     float val = 0.0f;
 
+    // Loop over tiles of the unrolled input
     for (int m = 0; m < (H_unroll - 1) / TILE_WIDTH + 1; ++m) {
-        if (row < Map_out && (m * TILE_WIDTH + tx) < H_unroll) {
-            tileA[ty][tx] = c_mask[row * H_unroll + m * TILE_WIDTH + tx];
+        // Load mask tile into shared memory
+        if (row < Map_out && m * TILE_WIDTH + tx < H_unroll) {
+            tileA[ty][tx] = mask[row * H_unroll + m * TILE_WIDTH + tx];
         } else {
             tileA[ty][tx] = 0.0f;
         }
 
+        // Compute indices for the input
         int h_unroll = m * TILE_WIDTH + ty;
         int w_unroll = col;
+
         if (h_unroll < H_unroll && w_unroll < W_unroll) {
             int c = h_unroll / (K * K);
             int p = (h_unroll % (K * K)) / K;
             int q = (h_unroll % (K * K)) % K;
+
             int b = w_unroll / (Height_out * Width_out);
             int remainder = w_unroll % (Height_out * Width_out);
             int h = remainder / Width_out;
@@ -52,10 +55,7 @@ __global__ void fused_conv_kernel(const float *input, /*const float *mask,*/ flo
             int input_col = w + q;
 
             if (b < Batch && c < Channel && input_row < Height && input_col < Width) {
-                tileB[ty][tx] = input[b * (Channel * Height * Width) 
-                                      + c * (Height * Width) 
-                                      + input_row * Width 
-                                      + input_col];
+                tileB[ty][tx] = input[b * (Channel * Height * Width) + c * (Height * Width) + input_row * Width + input_col];
             } else {
                 tileB[ty][tx] = 0.0f;
             }
@@ -65,6 +65,7 @@ __global__ void fused_conv_kernel(const float *input, /*const float *mask,*/ flo
 
         __syncthreads();
 
+        // Perform the multiplication and accumulation
         if (row < Map_out && col < W_unroll) {
             #pragma unroll
             for (int k = 0; k < TILE_WIDTH; ++k) {
@@ -75,6 +76,7 @@ __global__ void fused_conv_kernel(const float *input, /*const float *mask,*/ flo
         __syncthreads();
     }
 
+    // Write the output directly to the correct position
     if (row < Map_out && col < W_unroll) {
         int b = col / (Height_out * Width_out);
         int remainder = col % (Height_out * Width_out);
@@ -82,13 +84,10 @@ __global__ void fused_conv_kernel(const float *input, /*const float *mask,*/ flo
         int w = remainder % Width_out;
 
         if (b < Batch && h < Height_out && w < Width_out) {
-            output[b * (Map_out * Height_out * Width_out) 
-                   + row * (Height_out * Width_out) 
-                   + h * Width_out + w] = val;
+            output[b * (Map_out * Height_out * Width_out) + row * (Height_out * Width_out) + h * Width_out + w] = val;
         }
     }
 }
-
 
 __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, const float *host_input, const float *host_mask, float **device_output_ptr, float **device_input_ptr, float **device_mask_ptr, const int Batch, const int Map_out, const int Channel, const int Height, const int Width, const int K)
 {
@@ -105,19 +104,10 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
     size_t output_size = Batch * Map_out * Height_out * Width_out * sizeof(float);
     cudaMalloc((void**) device_output_ptr, output_size);
 
-    // // Allocate device memory for mask
-    // size_t mask_size = Map_out * Channel * K * K * sizeof(float);
-    // cudaMalloc((void**) device_mask_ptr, mask_size);
-    // cudaMemcpy(*device_mask_ptr, host_mask, mask_size, cudaMemcpyHostToDevice);
-
-    // Copy mask to constant memory
-    size_t mask_size = Map_out * Channel * K * K;
-    if (mask_size > MAX_FILTER_SIZE) {
-        std::cerr << "Error: Mask size exceeds MAX_FILTER_SIZE\n";
-        exit(-1);
-    }
-    cudaMemcpyToSymbol(c_mask, host_mask, mask_size * sizeof(float));
-
+    // Allocate device memory for mask
+    size_t mask_size = Map_out * Channel * K * K * sizeof(float);
+    cudaMalloc((void**) device_mask_ptr, mask_size);
+    cudaMemcpy(*device_mask_ptr, host_mask, mask_size, cudaMemcpyHostToDevice);
 
     // Check for errors
     cudaError_t error = cudaGetLastError();
@@ -152,6 +142,7 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
         // Launch the fused kernel
         fused_conv_kernel<<<dimGrid, dimBlock>>>(
             device_input + batch_idx * MAX_BATCH_SIZE * Channel * Height * Width,
+            device_mask,
             device_output + batch_idx * MAX_BATCH_SIZE * Map_out * Height_out * Width_out,
             current_batch_size,
             Map_out,
