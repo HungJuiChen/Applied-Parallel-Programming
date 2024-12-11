@@ -112,6 +112,10 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 
     // Copy mask to constant memory
     size_t mask_size = Map_out * Channel * K * K;
+    if (mask_size > MAX_MASK_SIZE) {
+        std::cerr << "Error: Mask size exceeds MAX_MASK_SIZE\n";
+        exit(-1);
+    }
     cudaMemcpyToSymbol(c_mask, host_mask, mask_size * sizeof(float), 0, cudaMemcpyHostToDevice);
 
 
