@@ -6,7 +6,7 @@
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
 
-#define MAX_FILTER_SIZE 8192
+#define MAX_FILTER_SIZE 16384
 __constant__ float const_mask[MAX_FILTER_SIZE];
 
 __global__ void fused_conv_kernel(const float *__restrict__ input, float *__restrict__ output,
