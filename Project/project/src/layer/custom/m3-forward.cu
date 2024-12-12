@@ -6,7 +6,7 @@
 #define BLOCK_SIZE 256
 #define MAX_BATCH_SIZE 1000
 
-#define MAX_FILTER_SIZ 8192
+#define MAX_FILTER_SIZE 8192
 __constant__ float const_mask[MAX_FILTER_SIZE];
 
 __global__ void fused_conv_kernel(const float *__restrict__ input, float *__restrict__ output,
@@ -36,7 +36,7 @@ __global__ void fused_conv_kernel(const float *__restrict__ input, float *__rest
     for (int m = 0; m < (H_unroll - 1) / TILE_WIDTH + 1; ++m) {
         // Load mask tile into shared memory
         if (row < Map_out && m * TILE_WIDTH + tx < H_unroll) {
-            tileA[ty][tx] = mask[row * H_unroll + m * TILE_WIDTH + tx];
+            tileA[ty][tx] = const_mask[row * H_unroll + m * TILE_WIDTH + tx];
         } else {
             tileA[ty][tx] = 0.0f;
         }
