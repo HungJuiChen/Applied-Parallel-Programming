@@ -3,3 +3,4 @@
 GitHub username at initialization time: HungJuiChen
 
 For next steps, please refer to the instructions provided by your course.
+# Applied-Parallel-Programming
