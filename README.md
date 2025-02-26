@@ -1,7 +1,3 @@
-Here's a README file for your **Applied Parallel Programming** project based on your report:
-
----
-
 # Applied Parallel Programming
 
 This repository contains the implementation and optimization of convolution operations using CUDA in an **Applied Parallel Programming** project. The project focuses on optimizing parallel execution using various CUDA techniques to enhance the performance of convolutional neural networks (CNNs).
